@@ -1,0 +1,62 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: gunluk-kiralik-evim-mongodb-dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: gunluk-kiralik-evim
+    volumes:
+      - mongodb_data_dev:/data/db
+    networks:
+      - app-network-dev
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: gunluk-kiralik-evim-server-dev
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongodb:27017/gunluk-kiralik-evim
+      - PORT=5000
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./server/uploads:/app/server/uploads
+    command: npm run dev
+    depends_on:
+      - mongodb
+    networks:
+      - app-network-dev
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    container_name: gunluk-kiralik-evim-client-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - server
+    networks:
+      - app-network-dev
+
+volumes:
+  mongodb_data_dev:
+
+networks:
+  app-network-dev:
+    driver: bridge
+

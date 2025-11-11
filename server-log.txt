@@ -1,0 +1,2 @@
+Server 5000 portunda çalışıyor
+MongoDB bağlantısı başarılı

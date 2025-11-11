@@ -1,0 +1,150 @@
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1 0 auto;
+}
+
+/* Loading Spinner */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #007bff;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Error Message */
+.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.success {
+  background-color: #d4edda;
+  color: #155724;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.policies-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px;
+  margin-top: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.policies-consent__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  flex-shrink: 0;
+  box-shadow: 0 10px 16px rgba(14, 165, 233, 0.25);
+}
+
+.policies-consent__content h4 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.policies-consent__content p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.policies-consent__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 14px;
+  font-size: 14px;
+}
+
+.policies-consent__links a {
+  color: #0f62fe;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.policies-consent__links span {
+  color: #94a3b8;
+}
+
+.policies-consent__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.policies-consent__checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #0ea5e9;
+}
+
+.policies-consent__checkbox span {
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .policies-consent {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .policies-consent__icon {
+    margin-bottom: 6px;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

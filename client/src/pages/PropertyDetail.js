@@ -1,0 +1,671 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import api, { API_URL } from '../services/api';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { FaMapMarkerAlt, FaUsers, FaWifi, FaCar, FaSnowflake, FaUtensils, FaInfoCircle } from 'react-icons/fa';
+import { haversineDistanceKm, LANDMARKS_ANTALYA } from '../utils/geo';
+import { fetchCurrentWeather } from '../utils/weather';
+import './PropertyDetail.css';
+import { setSEO, addJSONLD } from '../utils/seo';
+
+const PropertyDetail = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [property, setProperty] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [checkIn, setCheckIn] = useState(null);
+  const [checkOut, setCheckOut] = useState(null);
+  const [guests, setGuests] = useState({ adults: 1, children: 0 });
+  const [calculating, setCalculating] = useState(false);
+  const [priceSummary, setPriceSummary] = useState(null);
+  const [currentImage, setCurrentImage] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
+  // İletişim bilgileri Checkout sayfasında alınacak
+  const [similar, setSimilar] = useState([]);
+  const [weather, setWeather] = useState(null);
+  const [excludedDates, setExcludedDates] = useState([]);
+  const [extraPricing, setExtraPricing] = useState({
+    includedAdultsCount: 2,
+    includedChildrenCount: 1,
+    extraAdultPrice: 150,
+    extraChildPrice: 75
+  });
+  const recRef = useRef(null);
+
+  useEffect(() => {
+    fetchProperty();
+  }, [id]);
+
+  useEffect(() => {
+    if (property && checkIn && checkOut) {
+      calculatePrice();
+    }
+  }, [property, checkIn, checkOut, guests, extraPricing]);
+
+  const placeholderImage = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="100%" height="100%" fill="%23e5e7eb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="32" font-family="Arial, Helvetica, sans-serif">Görsel Yok</text></svg>';
+
+  // Helper: görüntü URL'leri
+  function getImageUrls(p) {
+    const apiBase = (process.env.REACT_APP_API_URL || 'http://localhost:5000');
+    const toFull = (u) => {
+      if (!u) return u;
+      if (u.startsWith('http')) return u;
+      if (u.startsWith('/uploads')) return `${apiBase}${u}`;
+      if (u.startsWith('uploads')) return `${apiBase}/${u}`;
+      return u;
+    };
+    const urls = (p?.images?.map(img => encodeURI(toFull((img?.url||'').replace(/\\/g,'/')))).filter(Boolean) || []);
+    if (urls.length === 0) urls.push(placeholderImage);
+    return urls;
+  }
+
+  // Türkçe karakter mojibake düzeltme
+  const fixTitle = (s) => {
+    if (!s) return '';
+    return s
+      .replace(/Ã¼/g, 'ü').replace(/Ãœ/g, 'Ü')
+      .replace(/Ã¶/g, 'ö').replace(/Ã–/g, 'Ö')
+      .replace(/Ã§/g, 'ç').replace(/Ã‡/g, 'Ç')
+      .replace(/Ä±/g, 'ı').replace(/Ä°/g, 'İ')
+      .replace(/ÅŸ/g, 'ş').replace(/Åž/g, 'Ş')
+      .replace(/ÄŸ/g, 'ğ').replace(/Äž/g, 'Ğ');
+  };
+
+  // Görselleri 5 sn'de bir otomatik değiştir
+  useEffect(() => {
+    const total = getImageUrls(property).length;
+    if (total <= 1) return;
+    const id = setInterval(() => {
+      setCurrentImage((i) => (i + 1) % total);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [property]);
+
+  useEffect(() => {
+    document.body.classList.add('property-detail-page');
+    return () => {
+      document.body.classList.remove('property-detail-page');
+      document.body.classList.remove('property-detail-sale');
+      document.body.classList.remove('property-detail-rent_daily');
+      document.body.classList.remove('property-detail-rent_monthly');
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/public/settings`);
+        const data = await res.json();
+        setExtraPricing({
+          includedAdultsCount: typeof data.includedAdultsCount === 'number' ? data.includedAdultsCount : 2,
+          includedChildrenCount: typeof data.includedChildrenCount === 'number' ? data.includedChildrenCount : 1,
+          extraAdultPrice: typeof data.extraAdultPrice === 'number' ? data.extraAdultPrice : 150,
+          extraChildPrice: typeof data.extraChildPrice === 'number' ? data.extraChildPrice : 75
+        });
+      } catch (_) {
+        // Varsayılan değerler kullanılacak
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!property?.listingType) return;
+    const typeClass = `property-detail-${property.listingType}`;
+    document.body.classList.add(typeClass);
+    return () => {
+      document.body.classList.remove(typeClass);
+    };
+  }, [property?.listingType]);
+
+  const fetchProperty = async () => {
+    try {
+      const res = await api.get(`/properties/${id}`);
+      setProperty(res.data);
+      
+      // Dolu tarihleri çıkar (confirmed booking'ler)
+      const excluded = [];
+      if (res.data.availability) {
+        res.data.availability.forEach(slot => {
+          if (slot.status === 'confirmed' && slot.date) {
+            const date = new Date(slot.date);
+            date.setHours(0, 0, 0, 0);
+            excluded.push(date);
+          }
+        });
+      }
+      
+      // Ayrıca confirmed booking'leri de çek (availability array'inde olmayanlar için)
+      try {
+        const bookingsRes = await api.get(`/bookings?property=${id}&status=confirmed`);
+        if (bookingsRes.data && Array.isArray(bookingsRes.data)) {
+          bookingsRes.data.forEach(booking => {
+            const checkIn = new Date(booking.checkIn);
+            const checkOut = new Date(booking.checkOut);
+            // checkIn'den checkOut'a kadar (checkOut hariç) tüm günleri exclude et
+            for (let d = new Date(checkIn); d < checkOut; d.setDate(d.getDate() + 1)) {
+              const date = new Date(d);
+              date.setHours(0, 0, 0, 0);
+              if (!excluded.some(ex => ex.getTime() === date.getTime())) {
+                excluded.push(date);
+              }
+            }
+          });
+        }
+      } catch (err) {
+        // Endpoint yoksa sadece availability array'ini kullan
+        console.log('Booking tarihleri çekilemedi, sadece availability kullanılıyor');
+      }
+      
+      setExcludedDates(excluded);
+      
+      // Similar recommendations (en az 2 öğe olacak şekilde doldur)
+      try {
+        let rec = [];
+        try {
+          const sRes = await api.get(`/properties?propertyType=${encodeURIComponent(res.data.propertyType)}&listingType=${res.data.listingType||''}`);
+          rec = (sRes.data || []).filter(p=>p._id !== res.data._id);
+        } catch(_){ rec = []; }
+        if (rec.length < 2) {
+          try {
+            const allRes = await api.get('/properties');
+            const all = allRes.data || [];
+            for (const p of all) {
+              if (p._id !== res.data._id && !rec.find(r=>r._id===p._id)) {
+                rec.push(p);
+                if (rec.length >= 6) break;
+              }
+            }
+          } catch(_){ /* ignore */ }
+        }
+        setSimilar(rec.slice(0,6));
+      } catch(_){}
+      // Weather fetch
+      if (res.data.location?.coordinates?.lat && res.data.location?.coordinates?.lng) {
+        try {
+          const w = await fetchCurrentWeather(res.data.location.coordinates.lat, res.data.location.coordinates.lng);
+          setWeather(w);
+        } catch(_){}
+      }
+      const ld = {
+        '@context': 'https://schema.org',
+        '@type': 'Apartment',
+        name: res.data.title,
+        address: {
+          '@type': 'PostalAddress',
+          addressLocality: res.data.location?.district || 'Antalya',
+          addressRegion: 'Antalya',
+          addressCountry: 'TR'
+        },
+        numberOfRooms: res.data.bedrooms,
+        floorSize: { '@type':'QuantitativeValue', value: res.data.size, unitCode: 'MTK' },
+        aggregateRating: res.data.rating?.count ? {
+          '@type':'AggregateRating', ratingValue: res.data.rating.average, reviewCount: res.data.rating.count
+        } : undefined,
+        offers: { '@type':'Offer', priceCurrency:'TRY', price: res.data.pricing?.daily }
+      };
+      addJSONLD('property', ld);
+
+      // SEO: title/description/canonical
+      const desc = res.data.description ? String(res.data.description).slice(0, 160) : `${res.data.bedrooms} oda, ${res.data.size} m², ${res.data.location?.district||'Antalya'}.`;
+      setSEO({
+        title: `${fixTitle(res.data.title)} | Günlük Kiralık Evim`,
+        description: desc,
+        canonical: `/properties/${res.data._id}`
+      });
+
+      // Breadcrumb
+      addJSONLD('breadcrumb', {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type':'ListItem', position:1, name:'Ana Sayfa', item: window.location.origin + '/' },
+          { '@type':'ListItem', position:2, name:'Daireler', item: window.location.origin + '/properties' },
+          { '@type':'ListItem', position:3, name: fixTitle(res.data.title), item: window.location.href }
+        ]
+      });
+    } catch (error) {
+      if (error.response?.status === 404) {
+        navigate('/properties');
+        return;
+      }
+      console.error('Daire yüklenemedi:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculatePrice = () => {
+    if (!property || !checkIn || !checkOut) return;
+
+    setCalculating(true);
+    try {
+      const totalDays = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
+      let dailyRate = property.pricing.daily;
+
+      // Sezonsal fiyat kontrolü
+      if (property.pricing.seasonalRates && property.pricing.seasonalRates.length > 0) {
+        for (const rate of property.pricing.seasonalRates) {
+          if (checkIn >= new Date(rate.startDate) && checkOut <= new Date(rate.endDate)) {
+            dailyRate = dailyRate * rate.multiplier;
+            break;
+          }
+        }
+      }
+
+      const adultCountRaw = Number(guests?.adults);
+      const adultCount = Number.isFinite(adultCountRaw) && adultCountRaw >= 1 ? adultCountRaw : 1;
+      const childCountRaw = Number(guests?.children);
+      const childCount = Number.isFinite(childCountRaw) && childCountRaw >= 0 ? childCountRaw : 0;
+
+      // Ekstra kişi ücreti - yönetici panelinden gelen değerleri kullan
+      const includedAdults = extraPricing.includedAdultsCount ?? 2;
+      const includedChildren = extraPricing.includedChildrenCount ?? 1;
+      const extraPerAdult = extraPricing.extraAdultPrice ?? 150;
+      const extraPerChild = extraPricing.extraChildPrice ?? 75;
+      const extraAdults = Math.max(0, adultCount - includedAdults);
+      const extraChildren = Math.max(0, childCount - includedChildren);
+      const extraPerDay = (extraAdults * extraPerAdult) + (extraChildren * extraPerChild);
+      const subtotal = (dailyRate + extraPerDay) * totalDays;
+      const serviceFee = 0;
+      const tax = 0;
+      const total = subtotal;
+
+      setPriceSummary({
+        dailyRate,
+        totalDays,
+        subtotal,
+        extraPerDay,
+        extraAdults,
+        extraChildren,
+        extraPerAdult,
+        extraPerChild,
+        children: childCount,
+        total
+      });
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const handleRequestBooking = async () => {
+    if (!checkIn) {
+      setErrorMsg('Lütfen giriş tarihini seçiniz');
+      return;
+    }
+
+    // Aylık kiralık veya satılıkta çıkış ve misafir sayısı gerekmez
+    const requireCheckout = property.listingType === 'rent_daily';
+    const requireGuests = property.listingType === 'rent_daily';
+
+    if (requireCheckout && !checkOut) {
+      setErrorMsg('Lütfen giriş ve çıkış tarihlerini seçiniz');
+      return;
+    }
+
+    // Tarihleri normalize et (sadece tarih kısmı, saat kısmı UTC midnight)
+    const normalizeDate = (date) => {
+      const d = new Date(date);
+      d.setHours(0, 0, 0, 0);
+      return d.toISOString();
+    };
+
+    // Eğer çıkış tarihi gerekmiyorsa, tipine göre örnek aralık ata (sistemsel zorunluluk için)
+    let effectiveCheckOut;
+    if (requireCheckout) {
+      effectiveCheckOut = checkOut || new Date((checkIn || new Date()).getTime() + 24 * 60 * 60 * 1000);
+    } else if (property.listingType === 'rent_monthly') {
+      // Aylık kiralıkta geçici olarak 30 gün sonrası
+      effectiveCheckOut = new Date((checkIn || new Date()).getTime() + 30 * 24 * 60 * 60 * 1000);
+    } else {
+      // Satılık için sistem zorunluluğu nedeniyle sembolik 7 gün sonrası
+      effectiveCheckOut = new Date((checkIn || new Date()).getTime() + 7 * 24 * 60 * 60 * 1000);
+    }
+
+    const adultCountRaw = Number(guests?.adults);
+    const adultCount = Number.isFinite(adultCountRaw) && adultCountRaw >= 1 ? adultCountRaw : 1;
+    const childCountRaw = Number(guests?.children);
+    const childCount = Number.isFinite(childCountRaw) && childCountRaw >= 0 ? childCountRaw : 0;
+
+    const params = new URLSearchParams({
+      checkIn: normalizeDate(checkIn),
+      checkOut: normalizeDate(effectiveCheckOut),
+      adults: String(requireGuests ? adultCount : 1),
+      children: String(requireGuests ? childCount : 0)
+    });
+    window.location.href = `/checkout/${property._id}?${params.toString()}`;
+  };
+
+  if (loading) {
+    return <div className="loading"><div className="spinner"></div></div>;
+  }
+
+  if (!property) {
+    return <div className="container"><p>Daire bulunamadı</p></div>;
+  }
+
+  const imageUrls = getImageUrls(property);
+
+  return (
+    <div className="property-detail">
+      <div className="container">
+        <div className="page-head" style={{display:'block', marginBottom: '10px'}}>
+          <div style={{marginBottom: '8px'}}>
+            <button className="btn btn-secondary" onClick={() => window.history.back()}>&larr; Geri</button>
+          </div>
+          <h1 style={{margin:'0 0 6px 0'}}>{fixTitle(property.title)}</h1>
+          <div className="property-location">
+            <FaMapMarkerAlt /> {property.location.district ? property.location.district + ', ' : ''}Antalya
+          </div>
+        </div>
+
+        <div className="property-content">
+          <div className="property-main">
+            <div className="property-images slider">
+              <div className="slides" style={{transform:`translateX(-${currentImage * 100}%)`}}>
+                {imageUrls.map((u, idx) => (
+                  <div className="slide" key={idx}>
+                    <img src={u} alt={`${property.title} ${idx+1}`} />
+                  </div>
+                ))}
+              </div>
+              {imageUrls.length > 1 && (
+                <>
+                  <button className="nav prev" onClick={()=>setCurrentImage((i)=> i>0 ? i-1 : imageUrls.length-1)}>&lsaquo;</button>
+                  <button className="nav next" onClick={()=>setCurrentImage((i)=> (i+1)%imageUrls.length)}>&rsaquo;</button>
+                  <div className="dots">
+                    {imageUrls.map((_,i)=>(
+                      <span key={i} className={i===currentImage?'dot active':'dot'} onClick={()=>setCurrentImage(i)} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="property-info-section">
+              <h2>Açıklama</h2>
+              <p>{property.description}</p>
+            </div>
+
+            <div className="property-info-section">
+              <h2>Özellikler</h2>
+              <div className="features-grid">
+                <div className="feature-item">
+                  <FaInfoCircle /> Tip: {property.propertyType}
+                </div>
+                <div className="feature-item">
+                  <FaInfoCircle /> {property.size} m²
+                </div>
+                <div className="feature-item">
+                  <FaInfoCircle /> {property.bedrooms} Oda
+                </div>
+                <div className="feature-item">
+                  <FaInfoCircle /> {property.bathrooms} Banyo
+                </div>
+              </div>
+            </div>
+
+            {similar.length > 0 && (
+            <div className="property-info-section">
+              <h2>Sizin İçin Önerilenler</h2>
+              <div className="recs">
+                {similar.length > 2 && (
+                  <>
+                    <button className="nav prev" onClick={()=>{ if(recRef.current){ const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 480px)').matches; const card = recRef.current.querySelector('.recs-card'); const step = (isMobile && card) ? card.clientWidth : recRef.current.clientWidth; recRef.current.scrollBy({left:-step, behavior:'smooth'});} }}>&lsaquo;</button>
+                    <button className="nav next" onClick={()=>{ if(recRef.current){ const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 480px)').matches; const card = recRef.current.querySelector('.recs-card'); const step = (isMobile && card) ? card.clientWidth : recRef.current.clientWidth; recRef.current.scrollBy({left:step, behavior:'smooth'});} }}>&rsaquo;</button>
+                  </>
+                )}
+                <div ref={recRef} className="recs-viewport" style={{overflow:'hidden'}}>
+                  <div className="recs-track">
+                    {similar.map(sp => {
+                      const similarImageUrls = getImageUrls(sp);
+                      const similarImageUrl = similarImageUrls[0];
+                      return (
+                      <div key={sp._id} className="recs-card" style={{position:'relative'}}>
+                        <a href={`/properties/${sp._id}`}>
+                          {(sp.listingType && sp.listingType !== 'rent') && (
+                            <div className="badge">{sp.listingType === 'rent_monthly' ? 'Aylık Kiralık' : sp.listingType === 'sale' ? 'Satılık' : 'Günlük Kiralık'}</div>
+                          )}
+                          <img src={similarImageUrl} alt={sp.title} />
+                          <div className="meta">
+                            <strong>{sp.title}</strong>
+                            {(() => {
+                              if (sp.listingType === 'rent_monthly') {
+                                const monthly = sp.pricing?.monthly || 0;
+                                return (
+                                  <div className="property-price">
+                                    <span className="price">₺{monthly}</span>
+                                    <span className="period">/ ay</span>
+                                  </div>
+                                );
+                              }
+                              if (sp.listingType === 'sale') {
+                                const salePrice = sp.pricing?.monthly || sp.pricing?.daily;
+                                return (
+                                  <div className="property-price">
+                                    {salePrice ? (
+                                      <>
+                                        <span className="price">₺{salePrice}</span>
+                                      </>
+                                    ) : (
+                                      <span className="period">Fiyat Sorunuz</span>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              const daily = sp.pricing?.daily || 0;
+                              const weekly = daily ? daily * 7 : 0;
+                              return (
+                                <div className="property-price">
+                                  <span className="price">₺{daily}</span>
+                                  <span className="period">/ gece</span>
+                                  {weekly ? (
+                                    <span className="weekly-price">Haftalık: ₺{weekly}</span>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </a>
+                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {property.location?.coordinates?.lat && (
+            <div className="property-info-section">
+              <h2>Çevre Bilgileri</h2>
+              {weather && (
+                <p>Hava Durumu: {weather.weather?.[0]?.description} • {Math.round(weather.main?.temp)}°C</p>
+              )}
+              <div className="amenities-list">
+                {LANDMARKS_ANTALYA.map(lm => {
+                  const km = haversineDistanceKm(
+                    { lat: property.location.coordinates.lat, lng: property.location.coordinates.lng },
+                    { lat: lm.lat, lng: lm.lng }
+                  );
+                  return <span key={lm.name} className="amenity-tag">{lm.name}: {km.toFixed(1)} km</span>;
+                })}
+              </div>
+            </div>
+          )}
+          </div>
+
+          <div className="property-sidebar" id="bookingSection">
+            <div className="booking-card">
+              <div className="price-display">
+                {
+                  property.listingType === 'rent_monthly' ? (
+                    <>
+                      <span className="daily-price">₺{property.pricing?.monthly ?? property.pricing?.daily ?? 0}</span>
+                      <span className="price-period">/ ay</span>
+                    </>
+                  ) : property.listingType === 'sale' ? (
+                    <>
+                      <span className="daily-price">{(property.pricing?.monthly || property.pricing?.daily) ? `₺${property.pricing?.monthly || property.pricing?.daily}` : 'Fiyat Sorunuz'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="daily-price">₺{property.pricing?.daily ?? 0}</span>
+                      <span className="price-period">/ gece</span>
+                    </>
+                  )
+                }
+              </div>
+
+              <div className="booking-form">
+                <div className="input-group">
+                  <label>Giriş Tarihi</label>
+                  <DatePicker
+                    selected={checkIn}
+                    onChange={(date) => {
+                      setCheckIn(date);
+                      // CheckIn değiştiğinde checkOut'u sıfırla (eğer checkOut checkIn'den önceyse)
+                      if (checkOut && date && checkOut <= date) {
+                        setCheckOut(null);
+                      }
+                    }}
+                    minDate={new Date()}
+                    excludeDates={excludedDates}
+                    dateFormat="dd/MM/yyyy"
+                    placeholderText="Giriş tarihi seçin"
+                    className="date-input"
+                    filterDate={(date) => {
+                      // Dolu tarihleri engelle
+                      const dateStr = date.toISOString().split('T')[0];
+                      return !excludedDates.some(ex => ex.toISOString().split('T')[0] === dateStr);
+                    }}
+                  />
+                </div>
+
+                {property.listingType === 'rent_daily' && (
+                  <>
+                    <div className="input-group">
+                      <label>Çıkış Tarihi</label>
+                      <DatePicker
+                        selected={checkOut}
+                        onChange={(date) => setCheckOut(date)}
+                        minDate={checkIn ? new Date(checkIn.getTime() + 24 * 60 * 60 * 1000) : new Date()}
+                        excludeDates={excludedDates}
+                        dateFormat="dd/MM/yyyy"
+                        placeholderText="Çıkış tarihi seçin"
+                        className="date-input"
+                        filterDate={(date) => {
+                          // Dolu tarihleri engelle
+                          const dateStr = date.toISOString().split('T')[0];
+                          return !excludedDates.some(ex => ex.toISOString().split('T')[0] === dateStr);
+                        }}
+                      />
+                    </div>
+
+                    <div className="input-group">
+                      <label>Misafir Sayısı</label>
+                      <div className="guests-input">
+                        <div>
+                          <label>Yetişkin</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={guests.adults}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                setGuests({ ...guests, adults: '' });
+                                return;
+                              }
+                              const numeric = parseInt(value, 10);
+                              setGuests({ ...guests, adults: Number.isNaN(numeric) || numeric < 1 ? 1 : numeric });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label>Çocuk</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={guests.children}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '') {
+                                setGuests({ ...guests, children: '' });
+                                return;
+                              }
+                              const numeric = parseInt(value, 10);
+                              setGuests({ ...guests, children: Number.isNaN(numeric) || numeric < 0 ? 0 : numeric });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* İletişim bilgileri Checkout sayfasında alınacak */}
+
+                {priceSummary && (
+                  <div className="price-summary">
+                    <div className="price-row">
+                      <span>₺{priceSummary.dailyRate} x {priceSummary.totalDays} gece</span>
+                      <span>₺{(priceSummary.dailyRate * priceSummary.totalDays).toFixed(2)}</span>
+                    </div>
+                    {(priceSummary.extraPerDay > 0) && (
+                      <div className="price-row">
+                        <span>Ekstra Kişi Ücreti ({priceSummary.extraAdults} yetişkin{priceSummary.extraChildren>0?`, ${priceSummary.extraChildren} çocuk`:''})</span>
+                        <span>₺{(priceSummary.extraPerDay * priceSummary.totalDays).toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="price-row total">
+                      <span>Toplam</span>
+                      <span>₺{priceSummary.total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleRequestBooking}
+                  className="btn btn-primary btn-block"
+                  disabled={!checkIn || (property.listingType==='rent_daily' && !checkOut) || calculating}
+                >
+                  {calculating ? 'Hesaplanıyor...' : 'Devam Et'}
+                </button>
+
+                <p className="booking-note" style={{marginTop: '10px'}}>
+                  * Müsait olduğumuz tarihler seçilebilir; seçilemeyen tarihler doludur.
+                </p>
+
+                <p className="booking-note">
+                  Rezervasyon talebiniz alındıktan sonra size geri dönüş yapılacaktır. Ödeme işlemi daire teslim edilirken veya ofisten yapılacaktır.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {errorMsg && (
+        <div className="modal-overlay" onClick={()=>setErrorMsg('')}>
+          <div className="modal property-detail-modal" onClick={(e)=>e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Uyarı</h3>
+            </div>
+            <div style={{padding:'16px 20px'}}>
+              <p>{errorMsg}</p>
+            </div>
+            <div className="modal-actions" style={{justifyContent:'center'}}>
+              <button className="btn btn-primary" onClick={()=>setErrorMsg('')}>Tamam</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PropertyDetail;
+

@@ -1,0 +1,148 @@
+.navbar {
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.nav-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0; /* Üst/alt boşluğu kaldır: beyaz şeridi doldursun */
+  height: 60px; /* Beyaz şerit yüksekliği */
+}
+
+.logo {
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--color-primary-dark);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-img {
+  height: 60px;        /* Şerit yüksekliği kadar */
+  width: auto;         /* Oran korunur */
+  max-height: 60px;    /* Güvenlik payı */
+  object-fit: contain;
+  display: block;
+}
+
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.nav-menu a {
+  color: #333;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Menü öğelerini ortala */
+  gap: 6px;
+  padding: 8px 10px;
+  position: relative;
+}
+
+.nav-menu a:hover { color: var(--color-primary-dark); }
+
+.nav-links a:hover {
+  color: var(--color-primary-dark);
+}
+
+.nav-links a:hover::after {
+  color: #b5b5b5;
+}
+
+.btn-register {
+  background-color: var(--color-primary);
+  color: white !important;
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+.btn-register:hover {
+  background-color: var(--color-primary-dark);
+  color: white !important;
+}
+
+.btn-logout {
+  background: none;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.btn-logout:hover {
+  color: #c82333;
+}
+
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #333;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: block;
+  }
+
+  .nav-menu {
+    position: fixed;
+    left: -100%;
+    top: 60px; /* Navbar yüksekliği ile aynı */
+    flex-direction: column;
+    background-color: white;
+    width: 100%;
+    text-align: center;
+    transition: 0.3s;
+    box-shadow: 0 10px 27px rgba(0, 0, 0, 0.05);
+    padding: 20px 0;
+    gap: 15px;
+    align-items: center; /* öğeleri ortala */
+    z-index: 1000;
+  }
+
+  .nav-menu.active { left: 0; }
+
+  .nav-menu a,
+  .btn-logout {
+    padding: 10px;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-menu {
+    padding: 20px 20px;
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  body.property-detail-page .nav-menu {
+    width: 100%;
+  }
+}
+
+
+
+
