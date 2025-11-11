@@ -309,8 +309,10 @@ const PropertyDetail = () => {
     // Tarihleri normalize et (sadece tarih kısmı, saat kısmı UTC midnight)
     const normalizeDate = (date) => {
       const d = new Date(date);
-      d.setHours(0, 0, 0, 0);
-      return d.toISOString();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
 
     // Eğer çıkış tarihi gerekmiyorsa, tipine göre örnek aralık ata (sistemsel zorunluluk için)

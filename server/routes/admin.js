@@ -92,9 +92,9 @@ router.delete('/bookings/:id', async (req, res) => {
       const checkInDate = new Date(booking.checkIn);
       const checkOutDate = new Date(booking.checkOut);
       for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = moment(d).format('YYYY-MM-DD');
+        const dateStr = moment.utc(d).format('YYYY-MM-DD');
         const slot = property.availability.find(a => 
-          moment(a.date).format('YYYY-MM-DD') === dateStr && 
+          moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
           a.bookingId?.toString() === booking._id.toString()
         );
         if (slot) {
@@ -634,9 +634,9 @@ router.post('/bookings/:id/approve', async (req, res) => {
       const checkOutDate = new Date(booking.checkOut);
       
       for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = moment(d).format('YYYY-MM-DD');
+        const dateStr = moment.utc(d).format('YYYY-MM-DD');
         const slot = property.availability?.find(a => 
-          moment(a.date).format('YYYY-MM-DD') === dateStr && 
+          moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
           a.bookingId?.toString() === booking._id.toString()
         );
         
@@ -691,9 +691,9 @@ router.post('/bookings/:id/reject', async (req, res) => {
       const checkOutDate = new Date(booking.checkOut);
       
       for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = moment(d).format('YYYY-MM-DD');
+        const dateStr = moment.utc(d).format('YYYY-MM-DD');
         const slot = property.availability?.find(a => 
-          moment(a.date).format('YYYY-MM-DD') === dateStr && 
+          moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
           a.bookingId?.toString() === booking._id.toString()
         );
         
@@ -760,12 +760,12 @@ router.post('/bookings/manual', [
     const availability = propertyDoc.availability || [];
     const bookingDates = [];
     for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-      bookingDates.push(moment(d).format('YYYY-MM-DD'));
+      bookingDates.push(moment.utc(d).format('YYYY-MM-DD'));
     }
 
     for (const date of bookingDates) {
       const availableSlot = availability.find(a => 
-        moment(a.date).format('YYYY-MM-DD') === date
+        moment.utc(a.date).format('YYYY-MM-DD') === date
       );
       if (availableSlot && availableSlot.status === 'confirmed') {
         return res.status(400).json({ 
@@ -819,7 +819,7 @@ router.post('/bookings/manual', [
     // Müsaitliği "confirmed" olarak işaretle
     for (const date of bookingDates) {
       const existingSlot = availability.findIndex(a => 
-        moment(a.date).format('YYYY-MM-DD') === date
+        moment.utc(a.date).format('YYYY-MM-DD') === date
       );
       
       if (existingSlot >= 0) {
@@ -828,7 +828,7 @@ router.post('/bookings/manual', [
         availability[existingSlot].status = 'confirmed';
       } else {
         availability.push({
-          date: new Date(date),
+          date: moment.utc(date, 'YYYY-MM-DD').toDate(),
           isAvailable: false,
           bookingId: booking._id,
           status: 'confirmed'
