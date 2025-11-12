@@ -7,6 +7,7 @@ import './Search.css';
 const Search = () => {
   const [searchParams] = useSearchParams();
   const [properties, setProperties] = useState([]);
+  const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     checkIn: searchParams.get('checkIn') || '',
@@ -19,17 +20,26 @@ const Search = () => {
 
   useEffect(() => {
     searchProperties();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const searchProperties = async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       Object.keys(filters).forEach(key => {
         if (filters[key]) params.append(key, filters[key]);
       });
-      
+
       const res = await api.get(`/search?${params.toString()}`);
-      setProperties(res.data);
+
+      if (Array.isArray(res.data)) {
+        setProperties(res.data);
+        setSuggestions(null);
+      } else {
+        setProperties(res.data.results || []);
+        setSuggestions(res.data.suggestions || null);
+      }
     } catch (error) {
       console.error('Arama hatası:', error);
     } finally {
@@ -50,11 +60,14 @@ const Search = () => {
     return <div className="loading"><div className="spinner"></div></div>;
   }
 
+  const hasResults = properties.length > 0;
+  const hasNearBudgetSuggestions = suggestions?.nearBudget?.length > 0;
+
   return (
     <div className="search-page">
       <div className="container">
         <h1>Antalya - Arama Sonuçları</h1>
-        
+
         <form className="search-filters" onSubmit={handleSearch}>
           <select
             value={filters.propertyType}
@@ -108,21 +121,35 @@ const Search = () => {
           {properties.length} daire bulundu
         </div>
 
-        <div className="properties-grid">
-          {properties.length === 0 ? (
-            <p className="no-results">Arama kriterlerinize uygun daire bulunamadı.</p>
-          ) : (
-            properties.map(property => (
+        {hasResults && (
+          <div className="properties-grid">
+            {properties.map(property => (
               <PropertyCard key={property._id} property={property} />
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {!hasResults && (
+          <div className="suggestions-wrapper">
+            <p className="no-results">Arama kriterlerinize uygun daire bulunamadı.</p>
+
+            {suggestions?.message && (
+              <p className="suggestions-message">{suggestions.message}</p>
+            )}
+
+            {hasNearBudgetSuggestions && (
+              <div className="properties-grid">
+                {suggestions.nearBudget.map(property => (
+                  <PropertyCard key={property._id} property={property} />
+                ))}
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default Search;
-
-
-

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api, { API_URL } from '../services/api';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
-import { FaMapMarkerAlt, FaUsers, FaWifi, FaCar, FaSnowflake, FaUtensils, FaInfoCircle } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaUsers, FaWifi, FaCar, FaSnowflake, FaUtensils, FaInfoCircle, FaShareAlt } from 'react-icons/fa';
 import { haversineDistanceKm, LANDMARKS_ANTALYA } from '../utils/geo';
 import { fetchCurrentWeather } from '../utils/weather';
 import './PropertyDetail.css';
@@ -34,6 +34,7 @@ const PropertyDetail = () => {
     extraChildPrice: 75
   });
   const recRef = useRef(null);
+  const [shareStatus, setShareStatus] = useState(null);
 
   useEffect(() => {
     fetchProperty();
@@ -120,6 +121,12 @@ const PropertyDetail = () => {
       document.body.classList.remove(typeClass);
     };
   }, [property?.listingType]);
+
+  useEffect(() => {
+    if (!shareStatus) return;
+    const timeout = setTimeout(() => setShareStatus(null), 3500);
+    return () => clearTimeout(timeout);
+  }, [shareStatus]);
 
   const fetchProperty = async () => {
     try {
@@ -341,6 +348,47 @@ const PropertyDetail = () => {
     window.location.href = `/checkout/${property._id}?${params.toString()}`;
   };
 
+  const handleShare = async () => {
+    if (!property) return;
+    if (typeof window === 'undefined') return;
+    const url = window.location.href;
+    const title = fixTitle(property.title);
+    const textParts = [title];
+    if (property.location?.district) {
+      textParts.push(property.location.district);
+    }
+    textParts.push('Antalya');
+    const shareData = {
+      title,
+      text: textParts.filter(Boolean).join(' - '),
+      url
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        setShareStatus('Bağlantı kopyalandı');
+        return;
+      }
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setShareStatus('Bağlantı kopyalandı');
+    } catch (err) {
+      console.error('Paylaşım başarısız:', err);
+      setShareStatus('Paylaşım tamamlanamadı');
+    }
+  };
+
   if (loading) {
     return <div className="loading"><div className="spinner"></div></div>;
   }
@@ -354,10 +402,19 @@ const PropertyDetail = () => {
   return (
     <div className="property-detail">
       <div className="container">
-        <div className="page-head" style={{display:'block', marginBottom: '10px'}}>
-          <div style={{marginBottom: '8px'}}>
+        <div className="page-head">
+          <div className="page-head-top">
             <button className="btn btn-secondary" onClick={() => window.history.back()}>&larr; Geri</button>
+            <button className="btn btn-share" onClick={handleShare}>
+              <FaShareAlt />
+              Paylaş
+            </button>
           </div>
+          {shareStatus && (
+            <div className={`share-status${shareStatus.includes('tamamlanamadı') ? ' error' : ''}`}>
+              {shareStatus}
+            </div>
+          )}
           <h1 style={{margin:'0 0 6px 0'}}>{fixTitle(property.title)}</h1>
           <div className="property-location">
             <FaMapMarkerAlt /> {property.location.district ? property.location.district + ', ' : ''}Antalya

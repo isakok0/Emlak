@@ -9,6 +9,7 @@ import { setSEO } from '../utils/seo';
 const Properties = ({ initialFilters = {} }) => {
   const [searchParams] = useSearchParams();
   const [properties, setProperties] = useState([]);
+  const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // localStorage'dan filtreleri yükle veya varsayılan değerleri kullan
@@ -82,9 +83,16 @@ const Properties = ({ initialFilters = {} }) => {
       if (sort) params.append('sort', sort);
       
       const res = await api.get(`/properties?${params.toString()}`);
-      setProperties(res.data);
+      if (Array.isArray(res.data)) {
+        setProperties(res.data);
+        setSuggestions(null);
+      } else {
+        setProperties(res.data.results || []);
+        setSuggestions(res.data.suggestions || null);
+      }
     } catch (error) {
       console.error('Daireler yüklenemedi:', error);
+      setSuggestions(null);
     } finally {
       setLoading(false);
     }
@@ -121,6 +129,7 @@ const Properties = ({ initialFilters = {} }) => {
     }
     setTempFilters(cleared);
     setFilters(cleared);
+    setSuggestions(null);
   };
 
   if (loading) {
@@ -214,15 +223,30 @@ const Properties = ({ initialFilters = {} }) => {
           </div>
         )}
 
-        <div className="properties-grid">
-          {properties.length === 0 ? (
-            <p className="no-results">Sonuç bulunamadı</p>
-          ) : (
-            properties.map(property => (
+        {properties.length > 0 ? (
+          <div className="properties-grid">
+            {properties.map(property => (
               <PropertyCard key={property._id} property={property} />
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="suggestions-wrapper">
+            <p className="empty-state">Filtrelerinize uygun daire bulunamadı.</p>
+
+            {suggestions?.message && (
+              <p className="suggestions-message">{suggestions.message}</p>
+            )}
+
+            {suggestions?.nearBudget?.length > 0 && (
+              <div className="properties-grid">
+                {suggestions.nearBudget.map(property => (
+                  <PropertyCard key={property._id} property={property} />
+                ))}
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
     </div>
   );

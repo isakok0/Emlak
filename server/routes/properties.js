@@ -8,6 +8,87 @@ const fs = require('fs');
 
 const router = express.Router();
 
+const parseNumber = value => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const effectivePriceExpr = {
+  $switch: {
+    branches: [
+      { case: { $eq: ['$listingType', 'rent_monthly'] }, then: { $ifNull: ['$pricing.monthly', 0] } },
+      { case: { $eq: ['$listingType', 'sale'] }, then: { $ifNull: ['$pricing.daily', 0] } },
+      { case: { $eq: ['$listingType', 'rent'] }, then: { $ifNull: ['$pricing.daily', 0] } }
+    ],
+    default: { $ifNull: ['$pricing.daily', 0] }
+  }
+};
+
+const buildPriceExpr = ({ min, max, exclusiveMin = false, exclusiveMax = false }) => {
+  const clauses = [];
+  if (min !== undefined) {
+    const op = exclusiveMin ? '$gt' : '$gte';
+    clauses.push({ [op]: [effectivePriceExpr, min] });
+  }
+  if (max !== undefined) {
+    const op = exclusiveMax ? '$lt' : '$lte';
+    clauses.push({ [op]: [effectivePriceExpr, max] });
+  }
+  if (!clauses.length) return null;
+  return clauses.length === 1 ? clauses[0] : { $and: clauses };
+};
+
+const applyPriceExpr = (filter, options = {}) => {
+  const expr = buildPriceExpr(options);
+  if (!expr) return filter;
+  if (filter.$expr) {
+    filter.$expr = { $and: [filter.$expr, expr] };
+  } else {
+    filter.$expr = expr;
+  }
+  return filter;
+};
+
+const buildAggregationPipeline = ({ matchFilter, sortStages, limit }) => {
+  const pipeline = [
+    { $match: matchFilter },
+    {
+      $addFields: {
+        pricingSort: effectivePriceExpr,
+        listingSort: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$listingType', 'rent_daily'] }, then: 1 },
+              { case: { $eq: ['$listingType', 'rent_monthly'] }, then: 2 },
+              { case: { $eq: ['$listingType', 'sale'] }, then: 3 }
+            ],
+            default: 4
+          }
+        }
+      }
+    }
+  ];
+
+  sortStages
+    .filter(Boolean)
+    .forEach(stage => pipeline.push({ $sort: stage }));
+
+  if (limit) {
+    pipeline.push({ $limit: limit });
+  }
+
+  pipeline.push({ $unset: ['pricingSort', 'listingSort'] });
+
+  return pipeline;
+};
+
+const aggregateAndPopulate = async ({ matchFilter, sortStages, limit }) => {
+  const pipeline = buildAggregationPipeline({ matchFilter, sortStages, limit });
+  const docs = await Property.aggregate(pipeline);
+  await Property.populate(docs, { path: 'owner', select: 'name email phone' });
+  return docs;
+};
+
 // Multer configuration for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -35,26 +116,25 @@ const upload = multer({
 router.get('/', async (req, res) => {
   try {
     const { propertyType, minPrice, maxPrice, amenities, listingType, featured, sort, bedroomsMin, sizeMin, ownerVerified } = req.query;
-    const filter = { 'location.city': 'Antalya', $or: [ { isActive: true }, { isActive: { $exists: false } } ] };
+    const baseFilter = { 'location.city': 'Antalya', $or: [ { isActive: true }, { isActive: { $exists: false } } ] };
 
-    if (propertyType) filter.propertyType = propertyType;
+    if (propertyType) baseFilter.propertyType = propertyType;
     if (listingType) {
       // Geriye dönük uyumluluk: 'rent' -> 'rent_daily'
-      filter.listingType = listingType === 'rent' ? 'rent_daily' : listingType;
+      baseFilter.listingType = listingType === 'rent' ? 'rent_daily' : listingType;
     }
-    if (featured === 'true') filter.isFeatured = true;
-    if (minPrice || maxPrice) {
-      filter['pricing.daily'] = {};
-      if (minPrice) filter['pricing.daily'].$gte = Number(minPrice);
-      if (maxPrice) filter['pricing.daily'].$lte = Number(maxPrice);
-    }
+    if (featured === 'true') baseFilter.isFeatured = true;
     if (amenities) {
       const amenityList = Array.isArray(amenities) ? amenities : [amenities];
-      filter.amenities = { $all: amenityList };
+      baseFilter.amenities = { $all: amenityList };
     }
-    if (bedroomsMin) filter.bedrooms = { $gte: Number(bedroomsMin) };
-    if (sizeMin) filter.size = { $gte: Number(sizeMin) };
-    if (ownerVerified === 'true') filter.ownerVerified = true;
+    if (bedroomsMin) baseFilter.bedrooms = { $gte: Number(bedroomsMin) };
+    if (sizeMin) baseFilter.size = { $gte: Number(sizeMin) };
+    if (ownerVerified === 'true') baseFilter.ownerVerified = true;
+
+    const minPriceValue = parseNumber(minPrice);
+    const maxPriceValue = parseNumber(maxPrice);
+    const filter = applyPriceExpr({ ...baseFilter }, { min: minPriceValue, max: maxPriceValue });
 
     let sortOpt = { createdAt: -1 };
     if (sort === 'price_asc') sortOpt = [ { pricingSort: 1 }, { listingSort: 1 } ];
@@ -62,56 +142,74 @@ router.get('/', async (req, res) => {
     if (sort === 'rating_desc') sortOpt = { 'rating.average': -1 };
     if (sort === 'views_desc') sortOpt = { views: -1 };
 
-    const aggregation = [
-      { $match: filter },
-      {
-        $addFields: {
-          pricingSort: {
-            $cond: [
-              { $gt: ['$pricing.daily', 0] },
-              '$pricing.daily',
-              {
-                $cond: [
-                  { $eq: ['$listingType', 'rent_monthly'] },
-                  { $add: ['$pricing.daily', 1000000] },
-                  {
-                    $cond: [
-                      { $eq: ['$listingType', 'sale'] },
-                      { $add: ['$pricing.daily', 2000000] },
-                      '$pricing.daily'
-                    ]
-                  }
-                ]
-              }
-            ]
-          },
-          listingSort: {
-            $switch: {
-              branches: [
-                { case: { $eq: ['$listingType', 'rent_daily'] }, then: 1 },
-                { case: { $eq: ['$listingType', 'rent_monthly'] }, then: 2 },
-                { case: { $eq: ['$listingType', 'sale'] }, then: 3 }
-              ],
-              default: 4
-            }
-          }
-        }
-      }
-    ];
+    const sortStages = Array.isArray(sortOpt) ? sortOpt : [sortOpt];
 
-    if (Array.isArray(sortOpt)) {
-      aggregation.push({ $sort: sortOpt[0] });
-      aggregation.push({ $sort: sortOpt[1] });
-    } else {
-      aggregation.push({ $sort: sortOpt });
+    const properties = await aggregateAndPopulate({ matchFilter: filter, sortStages });
+
+    let suggestions = null;
+
+    if (properties.length === 0 && maxPriceValue !== undefined) {
+      const relaxedMin = minPriceValue !== undefined
+        ? Math.max(minPriceValue * 0.8, 0)
+        : undefined;
+
+      const buildFlexFilter = (priceOptions = {}) => {
+        const { max, exclusiveMin, exclusiveMax } = priceOptions;
+        const resolvedMin = Object.prototype.hasOwnProperty.call(priceOptions, 'min')
+          ? priceOptions.min
+          : minPriceValue;
+
+        return applyPriceExpr({ ...baseFilter }, {
+          min: resolvedMin,
+          max,
+          exclusiveMin,
+          exclusiveMax
+        });
+      };
+
+      const budget = maxPriceValue;
+      const limits = {
+        nearBudgetLimit: 6
+      };
+
+      const cheaperQuery = relaxedMin !== undefined
+        ? buildFlexFilter({ min: relaxedMin, max: budget })
+        : buildFlexFilter({ max: budget });
+      const aboveMin = minPriceValue !== undefined ? Math.max(minPriceValue, budget) : budget;
+      const aboveExclusiveMin = minPriceValue === undefined || aboveMin === budget;
+
+      const slightlyAboveQuery = buildFlexFilter({
+        min: aboveMin,
+        max: budget * 1.2,
+        exclusiveMin: aboveExclusiveMin
+      });
+
+      const nearBudgetCheaper = await aggregateAndPopulate({
+        matchFilter: cheaperQuery,
+        sortStages: [ { pricingSort: -1 } ],
+        limit: limits.nearBudgetLimit
+      });
+
+      const nearBudgetAbove = await aggregateAndPopulate({
+        matchFilter: slightlyAboveQuery,
+        sortStages: [ { pricingSort: 1 } ],
+        limit: limits.nearBudgetLimit
+      });
+
+      const nearBudgetCombined = [...nearBudgetCheaper, ...nearBudgetAbove].slice(0, limits.nearBudgetLimit);
+
+      suggestions = nearBudgetCombined.length
+        ? {
+            message: 'Filtrenize en yakın daireleri sizin için bulduk.',
+            nearBudget: nearBudgetCombined
+          }
+        : null;
     }
 
-    aggregation.push({ $unset: ['pricingSort', 'listingSort'] });
-
-    const properties = await Property.aggregate(aggregation);
-    await Property.populate(properties, { path: 'owner', select: 'name email phone' });
-
-    res.json(properties);
+    res.json({
+      results: properties,
+      suggestions
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Sunucu hatası' });

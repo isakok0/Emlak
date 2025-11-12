@@ -223,11 +223,37 @@
   grid-column: 1 / -1;
 }
 
+.suggestions-wrapper {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  padding: 48px;
+  margin-top: 32px;
+}
+
+.empty-state {
+  text-align: center;
+  color: #475467;
+  font-size: 20px;
+  margin-bottom: 32px;
+}
+
+.suggestions-message {
+  text-align: center;
+  font-size: 18px;
+  color: #1d2939;
+  margin-bottom: 36px;
+}
+
 @media (max-width: 768px) {
   .filters-bar { grid-template-columns: 1fr 1fr; }
 
   .properties-grid {
     grid-template-columns: 1fr;
+  }
+
+  .suggestions-wrapper {
+    padding: 32px 20px;
   }
 }
 

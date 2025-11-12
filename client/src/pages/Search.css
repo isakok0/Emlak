@@ -45,6 +45,21 @@
   grid-column: 1 / -1;
 }
 
+.suggestions-wrapper {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  padding: 40px;
+  margin-top: 30px;
+}
+
+.suggestions-message {
+  text-align: center;
+  font-size: 18px;
+  color: #444;
+  margin-bottom: 35px;
+}
+
 @media (max-width: 768px) {
   .search-filters {
     grid-template-columns: 1fr;
@@ -52,6 +67,10 @@
 
   .properties-grid {
     grid-template-columns: 1fr;
+  }
+
+  .suggestions-wrapper {
+    padding: 25px;
   }
 }
 

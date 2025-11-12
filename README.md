@@ -40,6 +40,38 @@ Günlük kiralık ev platformu için tam özellikli bir web uygulaması. Node.js
 - MongoDB (yerel veya MongoDB Atlas)
 - npm veya yarn
 
+## DDoS Koruması ve CDN Kullanımı
+
+**Ne İşe Yarar:** Büyük ve yüksek trafikli projeler DDoS (Distributed Denial of Service) saldırılarına maruz kalabilir. Cloudflare gibi bir İçerik Dağıtım Ağı (CDN) kullanarak gelen trafiği dağıtabilir, zararlı istekleri filtreleyebilir ve uygulamanın önüne ek bir güvenlik katmanı koyabilirsiniz.
+
+**Neden Önemli:** CDN üzerinden trafik yönetimi, yoğun talepler sırasında veya saldırı durumlarında sitenin erişilebilirliğini korur. Ayrıca dünya genelindeki kullanıcılar için statik içeriklerin daha hızlı yüklenmesini sağlar ve gecikmeyi azaltır.
+
+### CDN Yapılandırma Adımları (Örnek: Cloudflare)
+1. **Alan adını Cloudflare'e ekleyin:** DNS kayıtlarınızı Cloudflare'e taşıyın ve mevcut DNS kayıtlarını doğrulayın.
+2. **Güvenlik seviyesini ayarlayın:** Proje gereksinimlerine göre `Security Level`, `Bot Fight Mode` ve `Rate Limiting` kurallarını etkinleştirin.
+3. **WAF (Web Application Firewall) kurallarını yapılandırın:** Yaygın saldırı kalıplarını engelleyen hazır kuralları açın ve projeye özel kurallar oluşturun.
+4. **CDN önbelleklemesini optimize edin:** Statik dosyalar (CSS, JS, görseller) için `Cache Everything` kuralı ve `Edge Cache TTL` sürelerini tanımlayın.
+5. **Always Online ve Load Balancing opsiyonlarını değerlendirin:** Sunucu hatalarında statik bir kopya sunmak ve trafik yükünü birden fazla backend'e dağıtmak için bu özellikleri etkinleştirin.
+6. **Log ve analizleri izleyin:** Cloudflare Analytics üzerinden trafik hacmini, potansiyel saldırıları ve performans metriklerini düzenli takip edin.
+
+> **Not:** CDN yapılandırması sırasında backend IP adresinizi gizli tutmaya ve yalnızca Cloudflare IP aralıklarından gelen trafiğe izin verecek şekilde güvenlik gruplarınızı güncellemeye dikkat edin.
+
+### Proje İçin Önerilen CDN Mimarisi
+- **Frontend (React):** `client/build` çıktısını bir obje storage (S3, R2 vb.) üzerine yerleştirin, Cloudflare veya benzeri bir CDN ile domaininizi bu statik içeriğe yönlendirin.
+- **Backend (API):** Cloudflare üzerinden `api.example.com` için ayrı bir origin tanımlayın, `Cache Level: Standard` ayarını kullanarak dinamik endpoint'ler için bypass edin.
+- **Güvenli İletişim:** Tüm origin bağlantılarını HTTPS üzerinden gerçekleştirin ve Cloudflare `Full (Strict)` SSL modunu kullanın.
+- **İç Ağ Trafiği:** Backend sunucusuna yalnızca CDN IP aralıklarından gelen istekleri kabul edecek firewall kuralları uygulayın.
+- **Loglama ve Alarmlar:** CDN ve backend loglarını merkezi bir izleme aracına (ELK, Datadog vb.) yönlendirerek anomali tespiti yapın.
+- **Cache Invalidasyonu:** Yeni frontend sürümleri yayımlandığında `Purge Cache` işlemini tetikleyin veya sürüm odaklı cache busting stratejisi uygulayın.
+
+## Test Politikası
+
+Bu projede geliştirilen her yeni özellik için otomatik test (unit ve integration) eklenmesi zorunludur. Yeni bir özellik eklerken:
+- Backend ve frontend bileşenleri için ilgili birim testlerini yazın.
+- Özelliğin uçtan uca akışını doğrulayan entegrasyon testlerini ekleyin.
+- Tüm testlerin lokal ortamda başarıyla geçtiğinden emin olun ve değişiklikleri göndermeden önce `npm test` komutunu çalıştırın.
+- Test kapsamı veya yürütümü ile ilgili istisna olması durumunda, bunun gerekçesini PR açıklamasında belirtin.
+
 ### Adımlar
 
 1. **Projeyi klonlayın veya indirin**
