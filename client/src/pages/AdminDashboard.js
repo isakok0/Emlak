@@ -537,7 +537,10 @@ const AdminDashboard = () => {
         api.get('/admin/calendar')
       ]);
 
-      const propertyList = Array.isArray(propertiesRes.data) ? propertiesRes.data : [];
+      const propertyListRaw = Array.isArray(propertiesRes.data)
+        ? propertiesRes.data
+        : (Array.isArray(propertiesRes.data?.results) ? propertiesRes.data.results : []);
+      const propertyList = propertyListRaw || [];
       const filteredProperties = propertyList.filter((property) => {
         const type = property?.listingType || 'rent_daily';
         const hasWeeklyPricing = Boolean(property?.pricing?.weekly);
