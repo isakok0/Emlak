@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api, { API_URL } from '../services/api';
@@ -9,6 +9,10 @@ import { haversineDistanceKm, LANDMARKS_ANTALYA } from '../utils/geo';
 import { fetchCurrentWeather } from '../utils/weather';
 import './PropertyDetail.css';
 import { setSEO, addJSONLD } from '../utils/seo';
+
+const CALENDAR_RANGE = 10;
+const CALENDAR_COLUMNS_DESKTOP = 5;
+const CALENDAR_COLUMNS_MOBILE = 2;
 
 const PropertyDetail = () => {
   const { id } = useParams();
@@ -35,6 +39,152 @@ const PropertyDetail = () => {
   });
   const recRef = useRef(null);
   const [shareStatus, setShareStatus] = useState(null);
+  const [calendarBookings, setCalendarBookings] = useState([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarStartDate, setCalendarStartDate] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
+  const [calendarColumns, setCalendarColumns] = useState(CALENDAR_COLUMNS_DESKTOP);
+  const today = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
+
+  const stripTime = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+
+  const toDateKey = (value) => {
+    const date = stripTime(value);
+    if (!date) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const calendarDays = useMemo(() => {
+    const days = [];
+    const start = stripTime(calendarStartDate);
+    if (!start) return days;
+    for (let i = 0; i < CALENDAR_RANGE; i += 1) {
+      const next = new Date(start);
+      next.setDate(start.getDate() + i);
+      days.push(next);
+    }
+    return days;
+  }, [calendarStartDate]);
+
+  const calendarDayChunks = useMemo(() => {
+    if (!calendarDays.length) return [];
+    const chunks = [];
+    const chunkSize = Math.max(calendarColumns, 1);
+    for (let i = 0; i < calendarDays.length; i += chunkSize) {
+      chunks.push(calendarDays.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }, [calendarDays, calendarColumns]);
+
+  const calendarCellMinWidth = useMemo(() => (
+    calendarColumns === CALENDAR_COLUMNS_MOBILE ? 120 : 100
+  ), [calendarColumns]);
+
+  const isPrevDisabled = useMemo(() => (
+    calendarStartDate.getTime() <= today.getTime()
+  ), [calendarStartDate, today]);
+
+  const normalizedBookings = useMemo(() => {
+    if (!Array.isArray(calendarBookings)) return [];
+    return calendarBookings.map((booking) => ({
+      ...booking,
+      checkInDate: stripTime(booking.checkIn),
+      checkOutDate: stripTime(booking.checkOut)
+    }));
+  }, [calendarBookings]);
+
+  const formatDayLabel = (date) => date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+  const formatWeekdayLabel = (date) => date.toLocaleDateString('tr-TR', { weekday: 'short' });
+
+  const calendarRangeLabel = useMemo(() => {
+    if (!calendarDays.length) return '';
+    const first = calendarDays[0];
+    const last = calendarDays[calendarDays.length - 1];
+    const firstLabel = first.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+    const lastLabel = last.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+    return `${firstLabel} - ${lastLabel}`;
+  }, [calendarDays]);
+
+  const getBookingForDate = (day) => {
+    const dayStart = stripTime(day);
+    if (!dayStart) return null;
+    return normalizedBookings.find((booking) => {
+      if (!booking.checkInDate || !booking.checkOutDate) return false;
+      return booking.checkInDate.getTime() <= dayStart.getTime() && booking.checkOutDate.getTime() > dayStart.getTime();
+    }) || null;
+  };
+
+  const getDayStatus = (day) => {
+    const dayKey = toDateKey(day);
+    let status = 'available';
+    let label = 'Müsait';
+    let tooltip = `${dayKey} • Müsait`;
+
+    const slot = Array.isArray(property?.availability)
+      ? property.availability.find((item) => toDateKey(item?.date) === dayKey)
+      : null;
+
+    if (slot) {
+      if (slot.status === 'pending_request') {
+        status = 'pending';
+        label = 'Talep';
+        tooltip = `${dayKey} • Bekleyen talep`;
+      } else if (slot.status === 'confirmed') {
+        status = 'confirmed';
+        label = 'Dolu';
+        tooltip = `${dayKey} • Onaylı rezervasyon`;
+      } else if (slot.status === 'cancelled') {
+        status = 'cancelled';
+        label = 'İptal';
+        tooltip = `${dayKey} • İptal edildi`;
+      } else if (slot.status === 'available') {
+        status = 'available';
+        label = 'Müsait';
+      }
+    }
+
+    const booking = getBookingForDate(day);
+    if (booking) {
+      const rangeLabel = (() => {
+        const checkInLabel = booking.checkInDate?.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+        const checkOutLabel = booking.checkOutDate?.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+        if (!checkInLabel || !checkOutLabel) return '';
+        return `${checkInLabel} - ${checkOutLabel}`;
+      })();
+
+      if (booking.status === 'pending_request') {
+        status = 'pending';
+        label = 'Talep';
+        tooltip = `${rangeLabel} • Bekleyen talep`;
+      } else if (booking.status === 'cancelled') {
+        status = 'cancelled';
+        label = 'İptal';
+        tooltip = `${rangeLabel} • İptal edildi`;
+      } else if (booking.status === 'completed') {
+        status = 'available';
+        label = 'Müsait';
+        tooltip = `${rangeLabel} • Tamamlandı (boş)`;
+      } else {
+        status = 'confirmed';
+        label = 'Dolu';
+        tooltip = `${rangeLabel} • Onaylı rezervasyon`;
+      }
+    }
+
+    return { status, label, tooltip };
+  };
 
   useEffect(() => {
     fetchProperty();
@@ -128,10 +278,85 @@ const PropertyDetail = () => {
     return () => clearTimeout(timeout);
   }, [shareStatus]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia('(max-width: 480px)');
+    const updateColumns = () => {
+      setCalendarColumns(mediaQuery.matches ? CALENDAR_COLUMNS_MOBILE : CALENDAR_COLUMNS_DESKTOP);
+    };
+    updateColumns();
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateColumns);
+      return () => mediaQuery.removeEventListener('change', updateColumns);
+    }
+    if (typeof mediaQuery.addListener === 'function') {
+      mediaQuery.addListener(updateColumns);
+      return () => mediaQuery.removeListener(updateColumns);
+    }
+    return undefined;
+  }, []);
+
+  const resetCalendarToToday = () => {
+    setCalendarStartDate(new Date(today));
+  };
+
+  const handlePrevRange = () => {
+    setCalendarStartDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() - CALENDAR_RANGE);
+      return next.getTime() < today.getTime() ? new Date(today) : next;
+    });
+  };
+
+  const handleNextRange = () => {
+    setCalendarStartDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + CALENDAR_RANGE);
+      return next;
+    });
+  };
+
+  const loadCalendarBookings = async (propertyId) => {
+    if (!propertyId) {
+      setCalendarBookings([]);
+      return;
+    }
+    setCalendarLoading(true);
+    try {
+      const statuses = ['confirmed', 'pending_request', 'cancelled'];
+      const responses = await Promise.all(
+        statuses.map((status) =>
+          api
+            .get(`/bookings?property=${propertyId}&status=${status}`)
+            .catch(() => ({ data: [] }))
+        )
+      );
+      const merged = responses.flatMap((response) =>
+        Array.isArray(response?.data) ? response.data : []
+      );
+      const seen = new Set();
+      const unique = [];
+      merged.forEach((booking) => {
+        const bookingId = booking?._id || `${booking?.checkIn}-${booking?.checkOut}-${booking?.status}`;
+        if (!bookingId || seen.has(bookingId)) return;
+        seen.add(bookingId);
+        unique.push(booking);
+      });
+      setCalendarBookings(unique);
+    } catch (calendarError) {
+      console.error('Takvim verisi yüklenemedi:', calendarError);
+      setCalendarBookings([]);
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
   const fetchProperty = async () => {
     try {
       const res = await api.get(`/properties/${id}`);
       setProperty(res.data);
+      resetCalendarToToday();
+      loadCalendarBookings(res.data?._id);
       
       // Dolu tarihleri çıkar (confirmed booking'ler)
       const excluded = [];
@@ -467,6 +692,67 @@ const PropertyDetail = () => {
               </div>
             </div>
 
+            <div className="property-info-section property-calendar">
+              <div className="property-calendar__header">
+                <h2>Müsaitlik Takvimi</h2>
+                <div className="property-calendar__controls">
+                  <button
+                    type="button"
+                    onClick={handlePrevRange}
+                    className="property-calendar__control-btn"
+                    disabled={isPrevDisabled}
+                  >
+                    Önceki 10 Gün
+                  </button>
+                  <span className="property-calendar__range">{calendarRangeLabel}</span>
+                  <button type="button" onClick={handleNextRange} className="property-calendar__control-btn">Sonraki 10 Gün</button>
+                  <button type="button" onClick={resetCalendarToToday} className="property-calendar__control-btn property-calendar__control-btn--ghost">Bugün</button>
+                </div>
+              </div>
+
+              <div className="property-calendar__legend">
+                <span><span className="property-calendar__dot status-confirmed"></span> Dolu</span>
+                <span><span className="property-calendar__dot status-pending"></span> Bekleyen</span>
+                <span><span className="property-calendar__dot status-available"></span> Müsait</span>
+                <span><span className="property-calendar__dot status-cancelled"></span> İptal</span>
+              </div>
+
+              {calendarLoading ? (
+                <div className="property-calendar__loading">
+                  <div className="spinner"></div>
+                  <span>Takvim yükleniyor...</span>
+                </div>
+              ) : (
+                <div className="property-calendar__grid">
+                  {calendarDayChunks.map((chunk, chunkIndex) => (
+                    <React.Fragment key={`chunk-${chunkIndex}`}>
+                      <div
+                        className="property-calendar__row"
+                        style={{ gridTemplateColumns: `repeat(${chunk.length || 1}, minmax(${calendarCellMinWidth}px, 1fr))` }}
+                      >
+                        {chunk.map((day) => {
+                          const cell = getDayStatus(day);
+                          return (
+                            <div
+                              key={`cell-${chunkIndex}-${toDateKey(day)}`}
+                              className={`property-calendar__cell status-${cell.status}`}
+                              title={cell.tooltip}
+                            >
+                              <span className="property-calendar__cell-date">{formatDayLabel(day)}</span>
+                              <span className="property-calendar__cell-weekday">{formatWeekdayLabel(day)}</span>
+                              {cell.label ? (
+                                <span className="property-calendar__cell-status">{cell.label}</span>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {similar.length > 0 && (
             <div className="property-info-section">
               <h2>Sizin İçin Önerilenler</h2>
@@ -580,32 +866,32 @@ const PropertyDetail = () => {
               </div>
 
               <div className="booking-form">
-                <div className="input-group">
-                  <label>Giriş Tarihi</label>
-                  <DatePicker
-                    selected={checkIn}
-                    onChange={(date) => {
-                      setCheckIn(date);
-                      // CheckIn değiştiğinde checkOut'u sıfırla (eğer checkOut checkIn'den önceyse)
-                      if (checkOut && date && checkOut <= date) {
-                        setCheckOut(null);
-                      }
-                    }}
-                    minDate={new Date()}
-                    excludeDates={excludedDates}
-                    dateFormat="dd/MM/yyyy"
-                    placeholderText="Giriş tarihi seçin"
-                    className="date-input"
-                    filterDate={(date) => {
-                      // Dolu tarihleri engelle
-                      const dateStr = date.toISOString().split('T')[0];
-                      return !excludedDates.some(ex => ex.toISOString().split('T')[0] === dateStr);
-                    }}
-                  />
-                </div>
+                <div className={`booking-dates${property.listingType === 'rent_daily' ? ' has-checkout' : ''}`}>
+                  <div className="input-group">
+                    <label>Giriş Tarihi</label>
+                    <DatePicker
+                      selected={checkIn}
+                      onChange={(date) => {
+                        setCheckIn(date);
+                        // CheckIn değiştiğinde checkOut'u sıfırla (eğer checkOut checkIn'den önceyse)
+                        if (checkOut && date && checkOut <= date) {
+                          setCheckOut(null);
+                        }
+                      }}
+                      minDate={new Date()}
+                      excludeDates={excludedDates}
+                      dateFormat="dd/MM/yyyy"
+                      placeholderText="Giriş tarihi seçin"
+                      className="date-input"
+                      filterDate={(date) => {
+                        // Dolu tarihleri engelle
+                        const dateStr = date.toISOString().split('T')[0];
+                        return !excludedDates.some(ex => ex.toISOString().split('T')[0] === dateStr);
+                      }}
+                    />
+                  </div>
 
-                {property.listingType === 'rent_daily' && (
-                  <>
+                  {property.listingType === 'rent_daily' && (
                     <div className="input-group">
                       <label>Çıkış Tarihi</label>
                       <DatePicker
@@ -623,7 +909,11 @@ const PropertyDetail = () => {
                         }}
                       />
                     </div>
+                  )}
+                </div>
 
+                {property.listingType === 'rent_daily' && (
+                  <>
                     <div className="input-group">
                       <label>Misafir Sayısı</label>
                       <div className="guests-input">

@@ -145,6 +145,215 @@
   border-radius: 8px;
 }
 
+.property-calendar {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.property-calendar__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.property-calendar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.property-calendar__control-btn {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: #f59e0b;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.property-calendar__control-btn:hover {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.property-calendar__control-btn:active {
+  transform: translateY(0);
+}
+
+.property-calendar__control-btn:disabled {
+  background: #fbbf24;
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.property-calendar__control-btn:disabled.property-calendar__control-btn--ghost {
+  background: transparent;
+  border-color: rgba(245, 158, 11, 0.4);
+  color: rgba(245, 158, 11, 0.6);
+}
+
+.property-calendar__control-btn:disabled:hover {
+  background: inherit;
+  transform: none;
+}
+
+.property-calendar__control-btn--ghost {
+  background: transparent;
+  border: 1px solid #f59e0b;
+  color: #f59e0b;
+}
+
+.property-calendar__control-btn--ghost:hover {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.property-calendar__range {
+  font-weight: 600;
+  color: #111827;
+}
+
+.property-calendar__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.property-calendar__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.property-calendar__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #d1d5db;
+}
+
+.property-calendar__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.property-calendar__row {
+  display: grid;
+  gap: 8px;
+}
+
+.property-calendar__cell {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 600;
+  gap: 6px;
+  padding: 14px 10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.property-calendar__cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.property-calendar__cell-date {
+  font-size: 18px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.property-calendar__cell-weekday {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: inherit;
+  opacity: 0.85;
+}
+
+.property-calendar__cell-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.property-calendar__loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0;
+  color: #6b7280;
+}
+
+.property-calendar__loading .spinner {
+  width: 32px;
+  height: 32px;
+}
+
+.property-calendar__cell.status-available,
+.property-calendar__dot.status-available {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.property-calendar__cell.status-available {
+  border-color: #a7f3d0;
+}
+
+.property-calendar__cell.status-pending,
+.property-calendar__dot.status-pending {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+
+.property-calendar__cell.status-pending {
+  border-color: #fcd34d;
+}
+
+.property-calendar__cell.status-confirmed,
+.property-calendar__dot.status-confirmed {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.property-calendar__cell.status-confirmed {
+  border-color: #fecaca;
+}
+
+.property-calendar__cell.status-cancelled,
+.property-calendar__dot.status-cancelled {
+  background: #e0f2fe;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.property-calendar__cell.status-cancelled {
+  border-color: #bfdbfe;
+}
+
 .amenities-list {
   display: flex;
   flex-wrap: wrap;
@@ -189,6 +398,16 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.booking-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.booking-dates .input-group {
+  flex: 1 1 100%;
 }
 
 .date-input {
@@ -357,6 +576,14 @@
   .main-image {
     height: 300px;
   }
+
+  .booking-dates.has-checkout {
+    flex-direction: row;
+  }
+
+  .booking-dates.has-checkout .input-group {
+    flex: 1 1 50%;
+  }
 }
 
 /* Phones ~375px — complete responsive for Property Detail */
@@ -390,6 +617,7 @@
   .price-display { margin-bottom: 16px; padding-bottom: 16px; }
   .daily-price { font-size: 26px; }
   .price-period { font-size: 14px; }
+  .booking-dates { flex-direction: column; }
   .guests-input { grid-template-columns: 1fr; gap: 10px; }
   .date-input, .guests-input input, .btn-block { width: 100%; box-sizing: border-box; }
   /* Center booking card contents */
@@ -398,6 +626,18 @@
   .booking-card .date-input { text-align: center; }
   .booking-card .date-input::placeholder { text-align: center; }
   .booking-note { word-wrap: break-word; overflow-wrap: break-word; }
+  .property-calendar { padding: 16px; }
+  .property-calendar__header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .property-calendar__controls { width: 100%; justify-content: center; }
+  .property-calendar__control-btn { flex: 1 1 calc(50% - 8px); text-align: center; font-size: 13px; padding: 8px 10px; }
+  .property-calendar__control-btn--ghost { flex: 0 0 auto; }
+  .property-calendar__range { width: 100%; text-align: center; order: -1; }
+  .property-calendar__legend { justify-content: center; }
+  .property-calendar__grid { margin: 0 -5px; }
+  .property-calendar__cell { min-width: 120px; min-height: 110px; gap: 4px; padding: 12px 8px; }
+  .property-calendar__cell-date { font-size: 16px; }
+  .property-calendar__cell-weekday { font-size: 12px; }
+  .property-calendar__cell-status { font-size: 13px; }
   .page-head-top { gap: 8px; }
   .btn.btn-share { width: 100%; justify-content: center; }
 
