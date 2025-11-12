@@ -106,7 +106,16 @@ const Home = () => {
   const fetchFeaturedProperties = async () => {
     try {
       const res = await api.get('/properties?featured=true');
-      let data = Array.isArray(res.data) ? res.data : [];
+      let data = [];
+
+      if (Array.isArray(res.data)) {
+        data = res.data;
+      } else if (Array.isArray(res.data?.results)) {
+        data = res.data.results;
+      } else if (Array.isArray(res.data?.properties)) {
+        data = res.data.properties;
+      }
+
       setProperties(data.slice(0, 12));
     } catch (error) {
       console.error('Daireler yüklenemedi:', error);

@@ -195,7 +195,7 @@ router.get('/', async (req, res) => {
     else filter.status = 'confirmed'; // Default olarak sadece confirmed booking'leri döndür
     
     const bookings = await Booking.find(filter)
-      .select('checkIn checkOut status')
+      .select('checkIn checkOut status payment.status')
       .sort({ checkIn: 1 });
 
     res.json(bookings);
@@ -304,51 +304,79 @@ router.patch('/:id/status', auth, async (req, res) => {
 
     await booking.save();
 
-    // Eğer onaylandıysa müsaitliği "confirmed" olarak işaretle
-    if (status === 'confirmed') {
-      const property = await Property.findById(booking.property);
-      if (property) {
-        const checkInDate = new Date(booking.checkIn);
-        const checkOutDate = new Date(booking.checkOut);
-        const availability = property.availability || [];
-        for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-          const dateStr = moment.utc(d).format('YYYY-MM-DD');
-          const slot = availability.find(a => 
-            moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
-            a.bookingId?.toString() === booking._id.toString()
-          );
-          if (slot) {
-            slot.status = 'confirmed';
-            slot.isAvailable = false;
-          }
-        }
-        property.availability = availability;
-        await property.save();
-      }
-    }
+    const property = await Property.findById(booking.property);
+    if (property) {
+      const availability = property.availability || [];
+      const checkInMoment = moment.utc(booking.checkIn).startOf('day');
+      const checkOutMoment = moment.utc(booking.checkOut).startOf('day');
+      const dateRange = [];
 
-    // Eğer iptal edildiyse müsaitliği geri aç
-    if (status === 'cancelled') {
-      const property = await Property.findById(booking.property);
-      if (property) {
-        const checkInDate = new Date(booking.checkIn);
-        const checkOutDate = new Date(booking.checkOut);
-        const availability = property.availability || [];
-        for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-          const dateStr = moment.utc(d).format('YYYY-MM-DD');
-          const slot = availability.find(a => 
-            moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
-            a.bookingId?.toString() === booking._id.toString()
-          );
+      for (let m = checkInMoment.clone(); m.isBefore(checkOutMoment); m.add(1, 'day')) {
+        dateRange.push(m.clone());
+      }
+
+      const findSlot = (m) => availability.find(a =>
+        moment.utc(a.date).format('YYYY-MM-DD') === m.format('YYYY-MM-DD') &&
+        a.bookingId?.toString() === booking._id.toString()
+      );
+
+      const ensureSlot = (m) => {
+        let slot = findSlot(m);
+        if (!slot) {
+          slot = {
+            date: m.toDate(),
+            isAvailable: false,
+            bookingId: booking._id,
+            status: 'pending_request'
+          };
+          availability.push(slot);
+        }
+        return slot;
+      };
+
+      if (paymentStatus) {
+        dateRange.forEach((m) => {
+          const slot = ensureSlot(m);
+          slot.bookingId = booking._id;
+          slot.isAvailable = false;
+          slot.status = paymentStatus === 'completed' ? 'confirmed' : 'pending_request';
+        });
+      }
+
+      if (status === 'confirmed') {
+        dateRange.forEach((m) => {
+          const slot = ensureSlot(m);
+          slot.bookingId = booking._id;
+          slot.isAvailable = false;
+          slot.status = booking.payment?.status === 'completed' ? 'confirmed' : 'pending_request';
+        });
+      }
+
+      if (status === 'cancelled') {
+        dateRange.forEach((m) => {
+          const slot = findSlot(m);
           if (slot) {
             slot.isAvailable = true;
             slot.bookingId = null;
             slot.status = 'available';
           }
-        }
-        property.availability = availability;
-        await property.save();
+        });
       }
+
+      if (status === 'completed') {
+        const today = moment.utc().startOf('day');
+        dateRange.forEach((m) => {
+          const slot = findSlot(m);
+          if (slot && m.isSameOrAfter(today)) {
+            slot.isAvailable = true;
+            slot.bookingId = null;
+            slot.status = 'available';
+          }
+        });
+      }
+
+      property.availability = availability;
+      await property.save();
     }
 
     res.json(booking);

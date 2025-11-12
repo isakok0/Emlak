@@ -632,17 +632,27 @@ router.post('/bookings/:id/approve', async (req, res) => {
     if (property) {
       const checkInDate = new Date(booking.checkIn);
       const checkOutDate = new Date(booking.checkOut);
+      const desiredStatus = booking.payment?.status === 'completed' ? 'confirmed' : 'pending_request';
       
       for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = moment.utc(d).format('YYYY-MM-DD');
+        const dayMoment = moment.utc(d);
+        const dateStr = dayMoment.format('YYYY-MM-DD');
         const slot = property.availability?.find(a => 
           moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
           a.bookingId?.toString() === booking._id.toString()
         );
         
         if (slot) {
-          slot.status = 'confirmed';
+          slot.status = desiredStatus;
           slot.isAvailable = false;
+        } else {
+          property.availability = property.availability || [];
+          property.availability.push({
+            date: dayMoment.toDate(),
+            isAvailable: false,
+            bookingId: booking._id,
+            status: desiredStatus
+          });
         }
       }
       await property.save();

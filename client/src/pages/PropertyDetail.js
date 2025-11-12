@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api, { API_URL } from '../services/api';
@@ -13,6 +13,20 @@ import { setSEO, addJSONLD } from '../utils/seo';
 const CALENDAR_RANGE = 10;
 const CALENDAR_COLUMNS_DESKTOP = 5;
 const CALENDAR_COLUMNS_MOBILE = 2;
+
+const mapPropertiesResponse = (data) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.properties)) return data.properties;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+};
+
+const getSimilarPerView = (width) => {
+  if (width <= 640) return 1;
+  if (width <= 1024) return 2;
+  return 3;
+};
 
 const PropertyDetail = () => {
   const { id } = useParams();
@@ -29,6 +43,10 @@ const PropertyDetail = () => {
   const [errorMsg, setErrorMsg] = useState('');
   // İletişim bilgileri Checkout sayfasında alınacak
   const [similar, setSimilar] = useState([]);
+  const [similarPerView, setSimilarPerView] = useState(() => (
+    typeof window !== 'undefined' ? getSimilarPerView(window.innerWidth) : 3
+  ));
+  const [similarPage, setSimilarPage] = useState(0);
   const [weather, setWeather] = useState(null);
   const [excludedDates, setExcludedDates] = useState([]);
   const [extraPricing, setExtraPricing] = useState({
@@ -37,7 +55,6 @@ const PropertyDetail = () => {
     extraAdultPrice: 150,
     extraChildPrice: 75
   });
-  const recRef = useRef(null);
   const [shareStatus, setShareStatus] = useState(null);
   const [calendarBookings, setCalendarBookings] = useState([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -145,10 +162,6 @@ const PropertyDetail = () => {
         status = 'confirmed';
         label = 'Dolu';
         tooltip = `${dayKey} • Onaylı rezervasyon`;
-      } else if (slot.status === 'cancelled') {
-        status = 'cancelled';
-        label = 'İptal';
-        tooltip = `${dayKey} • İptal edildi`;
       } else if (slot.status === 'available') {
         status = 'available';
         label = 'Müsait';
@@ -157,6 +170,7 @@ const PropertyDetail = () => {
 
     const booking = getBookingForDate(day);
     if (booking) {
+      const paymentStatus = booking?.payment?.status || 'pending';
       const rangeLabel = (() => {
         const checkInLabel = booking.checkInDate?.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
         const checkOutLabel = booking.checkOutDate?.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
@@ -168,10 +182,14 @@ const PropertyDetail = () => {
         status = 'pending';
         label = 'Talep';
         tooltip = `${rangeLabel} • Bekleyen talep`;
+      } else if (booking.status === 'confirmed' && paymentStatus !== 'completed') {
+        status = 'pending';
+        label = 'Bekleniyor';
+        tooltip = `${rangeLabel} • Bekleniyor`;
       } else if (booking.status === 'cancelled') {
-        status = 'cancelled';
-        label = 'İptal';
-        tooltip = `${rangeLabel} • İptal edildi`;
+        status = 'available';
+        label = 'Müsait';
+        tooltip = `${rangeLabel} • İptal edildi (boş)`;
       } else if (booking.status === 'completed') {
         status = 'available';
         label = 'Müsait';
@@ -179,7 +197,7 @@ const PropertyDetail = () => {
       } else {
         status = 'confirmed';
         label = 'Dolu';
-        tooltip = `${rangeLabel} • Onaylı rezervasyon`;
+        tooltip = `${rangeLabel} • Ödeme alındı`;
       }
     }
 
@@ -296,6 +314,16 @@ const PropertyDetail = () => {
     return undefined;
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleResize = () => {
+      setSimilarPerView(getSimilarPerView(window.innerWidth));
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const resetCalendarToToday = () => {
     setCalendarStartDate(new Date(today));
   };
@@ -323,7 +351,7 @@ const PropertyDetail = () => {
     }
     setCalendarLoading(true);
     try {
-      const statuses = ['confirmed', 'pending_request', 'cancelled'];
+      const statuses = ['confirmed', 'pending_request', 'cancelled', 'completed'];
       const responses = await Promise.all(
         statuses.map((status) =>
           api
@@ -356,55 +384,61 @@ const PropertyDetail = () => {
       const res = await api.get(`/properties/${id}`);
       setProperty(res.data);
       resetCalendarToToday();
-      loadCalendarBookings(res.data?._id);
-      
-      // Dolu tarihleri çıkar (confirmed booking'ler)
-      const excluded = [];
-      if (res.data.availability) {
-        res.data.availability.forEach(slot => {
-          if (slot.status === 'confirmed' && slot.date) {
-            const date = new Date(slot.date);
-            date.setHours(0, 0, 0, 0);
-            excluded.push(date);
-          }
-        });
-      }
-      
-      // Ayrıca confirmed booking'leri de çek (availability array'inde olmayanlar için)
-      try {
-        const bookingsRes = await api.get(`/bookings?property=${id}&status=confirmed`);
-        if (bookingsRes.data && Array.isArray(bookingsRes.data)) {
-          bookingsRes.data.forEach(booking => {
-            const checkIn = new Date(booking.checkIn);
-            const checkOut = new Date(booking.checkOut);
-            // checkIn'den checkOut'a kadar (checkOut hariç) tüm günleri exclude et
-            for (let d = new Date(checkIn); d < checkOut; d.setDate(d.getDate() + 1)) {
-              const date = new Date(d);
+
+      if (res.data.listingType !== 'sale') {
+        loadCalendarBookings(res.data?._id);
+        
+        // Dolu tarihleri çıkar (confirmed booking'ler)
+        const excluded = [];
+        if (res.data.availability) {
+          res.data.availability.forEach((slot) => {
+            if (['confirmed', 'pending_request'].includes(slot.status) && slot.date) {
+              const date = new Date(slot.date);
               date.setHours(0, 0, 0, 0);
-              if (!excluded.some(ex => ex.getTime() === date.getTime())) {
-                excluded.push(date);
-              }
+              excluded.push(date);
             }
           });
         }
-      } catch (err) {
-        // Endpoint yoksa sadece availability array'ini kullan
-        console.log('Booking tarihleri çekilemedi, sadece availability kullanılıyor');
+        
+        // Ayrıca confirmed booking'leri de çek (availability array'inde olmayanlar için)
+        try {
+          const bookingsRes = await api.get(`/bookings?property=${id}&status=confirmed`);
+          if (bookingsRes.data && Array.isArray(bookingsRes.data)) {
+            bookingsRes.data.forEach(booking => {
+              const checkIn = new Date(booking.checkIn);
+              const checkOut = new Date(booking.checkOut);
+              // checkIn'den checkOut'a kadar (checkOut hariç) tüm günleri exclude et
+              for (let d = new Date(checkIn); d < checkOut; d.setDate(d.getDate() + 1)) {
+                const date = new Date(d);
+                date.setHours(0, 0, 0, 0);
+                if (!excluded.some(ex => ex.getTime() === date.getTime())) {
+                  excluded.push(date);
+                }
+              }
+            });
+          }
+        } catch (err) {
+          // Endpoint yoksa sadece availability array'ini kullan
+          console.log('Booking tarihleri çekilemedi, sadece availability kullanılıyor');
+        }
+        
+        setExcludedDates(excluded);
+      } else {
+        setCalendarBookings([]);
+        setExcludedDates([]);
       }
-      
-      setExcludedDates(excluded);
       
       // Similar recommendations (en az 2 öğe olacak şekilde doldur)
       try {
         let rec = [];
         try {
           const sRes = await api.get(`/properties?propertyType=${encodeURIComponent(res.data.propertyType)}&listingType=${res.data.listingType||''}`);
-          rec = (sRes.data || []).filter(p=>p._id !== res.data._id);
+          rec = mapPropertiesResponse(sRes.data).filter(p=>p._id !== res.data._id);
         } catch(_){ rec = []; }
         if (rec.length < 2) {
           try {
             const allRes = await api.get('/properties');
-            const all = allRes.data || [];
+            const all = mapPropertiesResponse(allRes.data);
             for (const p of all) {
               if (p._id !== res.data._id && !rec.find(r=>r._id===p._id)) {
                 rec.push(p);
@@ -413,7 +447,9 @@ const PropertyDetail = () => {
             }
           } catch(_){ /* ignore */ }
         }
-        setSimilar(rec.slice(0,6));
+        const recommendations = rec.slice(0,6);
+        setSimilar(recommendations);
+        setSimilarPage(0);
       } catch(_){}
       // Weather fetch
       if (res.data.location?.coordinates?.lat && res.data.location?.coordinates?.lng) {
@@ -623,6 +659,7 @@ const PropertyDetail = () => {
   }
 
   const imageUrls = getImageUrls(property);
+  const isSale = property.listingType === 'sale';
 
   return (
     <div className="property-detail">
@@ -692,134 +729,164 @@ const PropertyDetail = () => {
               </div>
             </div>
 
-            <div className="property-info-section property-calendar">
-              <div className="property-calendar__header">
-                <h2>Müsaitlik Takvimi</h2>
-                <div className="property-calendar__controls">
-                  <button
-                    type="button"
-                    onClick={handlePrevRange}
-                    className="property-calendar__control-btn"
-                    disabled={isPrevDisabled}
-                  >
-                    Önceki 10 Gün
-                  </button>
-                  <span className="property-calendar__range">{calendarRangeLabel}</span>
-                  <button type="button" onClick={handleNextRange} className="property-calendar__control-btn">Sonraki 10 Gün</button>
-                  <button type="button" onClick={resetCalendarToToday} className="property-calendar__control-btn property-calendar__control-btn--ghost">Bugün</button>
+            {!isSale && (
+              <div className="property-info-section property-calendar">
+                <div className="property-calendar__header">
+                  <h2>Müsaitlik Takvimi</h2>
+                  <div className="property-calendar__controls">
+                    <button
+                      type="button"
+                      onClick={handlePrevRange}
+                      className="property-calendar__control-btn"
+                      disabled={isPrevDisabled}
+                    >
+                      Önceki 10 Gün
+                    </button>
+                    <span className="property-calendar__range">{calendarRangeLabel}</span>
+                    <button type="button" onClick={handleNextRange} className="property-calendar__control-btn">Sonraki 10 Gün</button>
+                    <button type="button" onClick={resetCalendarToToday} className="property-calendar__control-btn property-calendar__control-btn--ghost">Bugün</button>
+                  </div>
                 </div>
-              </div>
 
-              <div className="property-calendar__legend">
-                <span><span className="property-calendar__dot status-confirmed"></span> Dolu</span>
-                <span><span className="property-calendar__dot status-pending"></span> Bekleyen</span>
+                <div className="property-calendar__legend">
+                  <span><span className="property-calendar__dot status-confirmed"></span> Dolu</span>
+                  <span><span className="property-calendar__dot status-pending"></span> Bekleyen</span>
                 <span><span className="property-calendar__dot status-available"></span> Müsait</span>
-                <span><span className="property-calendar__dot status-cancelled"></span> İptal</span>
-              </div>
+                </div>
 
-              {calendarLoading ? (
-                <div className="property-calendar__loading">
-                  <div className="spinner"></div>
-                  <span>Takvim yükleniyor...</span>
-                </div>
-              ) : (
-                <div className="property-calendar__grid">
-                  {calendarDayChunks.map((chunk, chunkIndex) => (
-                    <React.Fragment key={`chunk-${chunkIndex}`}>
-                      <div
-                        className="property-calendar__row"
-                        style={{ gridTemplateColumns: `repeat(${chunk.length || 1}, minmax(${calendarCellMinWidth}px, 1fr))` }}
-                      >
-                        {chunk.map((day) => {
-                          const cell = getDayStatus(day);
-                          return (
-                            <div
-                              key={`cell-${chunkIndex}-${toDateKey(day)}`}
-                              className={`property-calendar__cell status-${cell.status}`}
-                              title={cell.tooltip}
-                            >
-                              <span className="property-calendar__cell-date">{formatDayLabel(day)}</span>
-                              <span className="property-calendar__cell-weekday">{formatWeekdayLabel(day)}</span>
-                              {cell.label ? (
-                                <span className="property-calendar__cell-status">{cell.label}</span>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-            </div>
+                {calendarLoading ? (
+                  <div className="property-calendar__loading">
+                    <div className="spinner"></div>
+                    <span>Takvim yükleniyor...</span>
+                  </div>
+                ) : (
+                  <div className="property-calendar__grid">
+                    {calendarDayChunks.map((chunk, chunkIndex) => (
+                      <React.Fragment key={`chunk-${chunkIndex}`}>
+                        <div
+                          className="property-calendar__row"
+                          style={{ gridTemplateColumns: `repeat(${chunk.length || 1}, minmax(${calendarCellMinWidth}px, 1fr))` }}
+                        >
+                          {chunk.map((day) => {
+                            const cell = getDayStatus(day);
+                            return (
+                              <div
+                                key={`cell-${chunkIndex}-${toDateKey(day)}`}
+                                className={`property-calendar__cell status-${cell.status}`}
+                                title={cell.tooltip}
+                              >
+                                <span className="property-calendar__cell-date">{formatDayLabel(day)}</span>
+                                <span className="property-calendar__cell-weekday">{formatWeekdayLabel(day)}</span>
+                                {cell.label ? (
+                                  <span className="property-calendar__cell-status">{cell.label}</span>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {similar.length > 0 && (
             <div className="property-info-section">
               <h2>Sizin İçin Önerilenler</h2>
               <div className="recs">
-                {similar.length > 2 && (
-                  <>
-                    <button className="nav prev" onClick={()=>{ if(recRef.current){ const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 480px)').matches; const card = recRef.current.querySelector('.recs-card'); const step = (isMobile && card) ? card.clientWidth : recRef.current.clientWidth; recRef.current.scrollBy({left:-step, behavior:'smooth'});} }}>&lsaquo;</button>
-                    <button className="nav next" onClick={()=>{ if(recRef.current){ const isMobile = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 480px)').matches; const card = recRef.current.querySelector('.recs-card'); const step = (isMobile && card) ? card.clientWidth : recRef.current.clientWidth; recRef.current.scrollBy({left:step, behavior:'smooth'});} }}>&rsaquo;</button>
-                  </>
-                )}
-                <div ref={recRef} className="recs-viewport" style={{overflow:'hidden'}}>
-                  <div className="recs-track">
-                    {similar.map(sp => {
-                      const similarImageUrls = getImageUrls(sp);
-                      const similarImageUrl = similarImageUrls[0];
-                      return (
-                      <div key={sp._id} className="recs-card" style={{position:'relative'}}>
-                        <a href={`/properties/${sp._id}`}>
-                          {(sp.listingType && sp.listingType !== 'rent') && (
-                            <div className="badge">{sp.listingType === 'rent_monthly' ? 'Aylık Kiralık' : sp.listingType === 'sale' ? 'Satılık' : 'Günlük Kiralık'}</div>
-                          )}
-                          <img src={similarImageUrl} alt={sp.title} />
-                          <div className="meta">
-                            <strong>{sp.title}</strong>
-                            {(() => {
-                              if (sp.listingType === 'rent_monthly') {
-                                const monthly = sp.pricing?.monthly || 0;
-                                return (
-                                  <div className="property-price">
-                                    <span className="price">₺{monthly}</span>
-                                    <span className="period">/ ay</span>
-                                  </div>
-                                );
-                              }
-                              if (sp.listingType === 'sale') {
-                                const salePrice = sp.pricing?.monthly || sp.pricing?.daily;
-                                return (
-                                  <div className="property-price">
-                                    {salePrice ? (
-                                      <>
-                                        <span className="price">₺{salePrice}</span>
-                                      </>
-                                    ) : (
-                                      <span className="period">Fiyat Sorunuz</span>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              const daily = sp.pricing?.daily || 0;
-                              const weekly = daily ? daily * 7 : 0;
-                              return (
-                                <div className="property-price">
-                                  <span className="price">₺{daily}</span>
-                                  <span className="period">/ gece</span>
-                                  {weekly ? (
-                                    <span className="weekly-price">Haftalık: ₺{weekly}</span>
-                                  ) : null}
+                {(() => {
+                  const total = similar.length;
+                  const perView = Math.min(similarPerView, total);
+                  const start = ((similarPage % total) + total) % total;
+                  const visible = Array.from({ length: perView }, (_, idx) => similar[(start + idx) % total]);
+                  return (
+                    <>
+                      <div
+                        className="recs-grid"
+                        style={{ gridTemplateColumns: `repeat(${Math.max(1, perView)}, minmax(0, 1fr))` }}
+                      >
+                        {visible.map((sp) => {
+                          const similarImageUrls = getImageUrls(sp);
+                          const similarImageUrl = similarImageUrls[0];
+                          const listingBadge = sp.listingType === 'rent_monthly'
+                            ? 'Aylık Kiralık'
+                            : sp.listingType === 'sale'
+                              ? 'Satılık'
+                              : 'Günlük Kiralık';
+                          return (
+                            <div key={sp._id} className="recs-card" style={{ position: 'relative' }}>
+                              <a href={`/properties/${sp._id}`}>
+                                {(sp.listingType && sp.listingType !== 'rent') && (
+                                  <div className="badge">{listingBadge}</div>
+                                )}
+                                <img src={similarImageUrl} alt={sp.title} />
+                                <div className="meta">
+                                  <strong>{sp.title}</strong>
+                                  {(() => {
+                                    if (sp.listingType === 'rent_monthly') {
+                                      const monthly = sp.pricing?.monthly || 0;
+                                      return (
+                                        <div className="property-price">
+                                          <span className="price">₺{monthly}</span>
+                                          <span className="period">/ ay</span>
+                                        </div>
+                                      );
+                                    }
+                                    if (sp.listingType === 'sale') {
+                                      const salePrice = sp.pricing?.monthly || sp.pricing?.daily;
+                                      return (
+                                        <div className="property-price">
+                                          {salePrice ? (
+                                            <span className="price">₺{salePrice}</span>
+                                          ) : (
+                                            <span className="period">Fiyat Sorunuz</span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    const daily = sp.pricing?.daily || 0;
+                                    const weekly = daily ? daily * 7 : 0;
+                                    return (
+                                      <div className="property-price">
+                                        <span className="price">₺{daily}</span>
+                                        <span className="period">/ gece</span>
+                                        {weekly ? (
+                                          <span className="weekly-price">Haftalık: ₺{weekly}</span>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
-                              );
-                            })()}
-                          </div>
-                        </a>
+                              </a>
+                            </div>
+                          );
+                        })}
                       </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                      {total > perView && (
+                        <>
+                          <button
+                            className="nav prev"
+                            onClick={() => setSimilarPage((p) => p - 1)}
+                            aria-label="Önceki öneriler"
+                          >
+                            ‹
+                          </button>
+                          <button
+                            className="nav next"
+                            onClick={() => setSimilarPage((p) => p + 1)}
+                            aria-label="Sonraki öneriler"
+                          >
+                            ›
+                          </button>
+                          <div className="recs-indicator">
+                            {((start + 1 - 1 + total) % total) + 1} / {total}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -985,9 +1052,11 @@ const PropertyDetail = () => {
                   {calculating ? 'Hesaplanıyor...' : 'Devam Et'}
                 </button>
 
-                <p className="booking-note" style={{marginTop: '10px'}}>
-                  * Müsait olduğumuz tarihler seçilebilir; seçilemeyen tarihler doludur.
-                </p>
+                {!isSale && (
+                  <p className="booking-note" style={{marginTop: '10px'}}>
+                    * Müsait olduğumuz tarihler seçilebilir; seçilemeyen tarihler doludur.
+                  </p>
+                )}
 
                 <p className="booking-note">
                   Rezervasyon talebiniz alındıktan sonra size geri dönüş yapılacaktır. Ödeme işlemi daire teslim edilirken veya ofisten yapılacaktır.
