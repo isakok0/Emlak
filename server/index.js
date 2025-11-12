@@ -42,6 +42,8 @@ app.get('/api/public/settings', async (req, res) => {
       openingHours: s?.openingHours || 'Pazartesi - Pazar: 09:00 - 22:00 (7/24 Acil Destek)',
       mapEmbedUrl: s?.mapEmbedUrl || '',
       instagramUrl: s?.instagramUrl || '',
+      footerNotice: s?.footerNotice || 'Tüm hakları saklıdır.',
+      footerYear: typeof s?.footerYear === 'number' ? s.footerYear : new Date().getFullYear(),
       visionText: s?.visionText || '',
       missionText: s?.missionText || '',
       statsHappyGuests: s?.statsHappyGuests || '999+',
@@ -58,7 +60,7 @@ app.get('/api/public/settings', async (req, res) => {
       includedChildrenCount: typeof s?.includedChildrenCount === 'number' ? s.includedChildrenCount : 1
     });
   } catch (e) {
-    res.json({ maintenanceMode: false, maintenanceMessage: '', contactEmail: 'info@example.com', contactPhone: '+90 555 555 55 55', contactAddress: 'Atatürk Cad. No:123, Muratpaşa, Antalya', openingHours: 'Pazartesi - Pazar: 09:00 - 22:00 (7/24 Acil Destek)', mapEmbedUrl: '', instagramUrl: '', visionText: '', missionText: '', statsHappyGuests: '999+', statsAvgRating: '4.8', statsSupport: '7/24', siteTitle: 'Günlük Kiralık Evim', siteIcon: 'FaHome', siteLogoUrl: '', siteLogoWidth: 0, siteLogoHeight: 24, extraAdultPrice: 150, extraChildPrice: 75, includedAdultsCount: 2, includedChildrenCount: 1 });
+    res.json({ maintenanceMode: false, maintenanceMessage: '', contactEmail: 'info@example.com', contactPhone: '+90 555 555 55 55', contactAddress: 'Atatürk Cad. No:123, Muratpaşa, Antalya', openingHours: 'Pazartesi - Pazar: 09:00 - 22:00 (7/24 Acil Destek)', mapEmbedUrl: '', instagramUrl: '', footerNotice: 'Tüm hakları saklıdır.', footerYear: new Date().getFullYear(), visionText: '', missionText: '', statsHappyGuests: '999+', statsAvgRating: '4.8', statsSupport: '7/24', siteTitle: 'Günlük Kiralık Evim', siteIcon: 'FaHome', siteLogoUrl: '', siteLogoWidth: 0, siteLogoHeight: 24, extraAdultPrice: 150, extraChildPrice: 75, includedAdultsCount: 2, includedChildrenCount: 1 });
   }
 });
 

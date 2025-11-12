@@ -73,7 +73,16 @@ const AdminDashboard = () => {
   const [maintenanceForm, setMaintenanceForm] = useState({ maintenanceMode: false, maintenanceMessage: '', contactEmail:'', contactPhone:'', contactAddress:'' });
   const [maintenanceModalMsg, setMaintenanceModalMsg] = useState('');
   const [showContactModal, setShowContactModal] = useState(false);
-  const [contactForm, setContactForm] = useState({ contactEmail: 'info@example.com', contactPhone: '+90 555 555 55 55', contactAddress: 'Atatürk Cad. No:123, Muratpaşa, Antalya' });
+const [contactForm, setContactForm] = useState({
+  contactEmail: 'info@example.com',
+  contactPhone: '+90 555 555 55 55',
+  contactAddress: 'Atatürk Cad. No:123, Muratpaşa, Antalya',
+  openingHours: 'Pazartesi - Pazar: 09:00 - 22:00 (7/24 Acil Destek)',
+  mapEmbedUrl: '',
+  instagramUrl: '',
+  footerNotice: 'Tüm hakları saklıdır.',
+  footerYear: new Date().getFullYear()
+});
   const [contactModalMsg, setContactModalMsg] = useState('');
   const [showHomepageModal, setShowHomepageModal] = useState(false);
   const [visionText, setVisionText] = useState('');
@@ -1034,7 +1043,9 @@ const AdminDashboard = () => {
                       contactAddress: s.contactAddress || 'Atatürk Cad. No:123, Muratpaşa, Antalya',
                       openingHours: s.openingHours || 'Pazartesi - Pazar: 09:00 - 22:00 (7/24 Acil Destek)',
                       mapEmbedUrl: s.mapEmbedUrl || '',
-                      instagramUrl: s.instagramUrl || ''
+                      instagramUrl: s.instagramUrl || '',
+                      footerNotice: s.footerNotice || 'Tüm hakları saklıdır.',
+                      footerYear: s.footerYear || new Date().getFullYear()
                     });
                   } catch(_) {}
                   setShowContactModal(true);
@@ -1399,7 +1410,9 @@ const AdminDashboard = () => {
                         contactAddress: contactForm.contactAddress,
                         openingHours: contactForm.openingHours,
                         mapEmbedUrl: contactForm.mapEmbedUrl,
-                        instagramUrl: contactForm.instagramUrl
+                        instagramUrl: contactForm.instagramUrl,
+                        footerNotice: contactForm.footerNotice,
+                        footerYear: Number(contactForm.footerYear) || new Date().getFullYear()
                       });
                       setContactModalMsg('İletişim bilgileri güncellendi');
                       setTimeout(()=> setContactModalMsg(''), 2500);
@@ -1430,6 +1443,25 @@ const AdminDashboard = () => {
                     <div className="input-group">
                       <label>Instagram URL</label>
                       <input value={contactForm.instagramUrl || ''} onChange={(e)=> setContactForm({...contactForm, instagramUrl: e.target.value})} placeholder="https://instagram.com/kullanici" />
+                    </div>
+                    <div className="input-group">
+                      <label>Footer Metni</label>
+                      <input
+                        value={contactForm.footerNotice || ''}
+                        onChange={(e)=> setContactForm({...contactForm, footerNotice: e.target.value})}
+                        placeholder="Tüm hakları saklıdır."
+                      />
+                      <small style={{color:'#64748b'}}>© işaretinin yanında gösterilecek metin.</small>
+                    </div>
+                    <div className="input-group">
+                      <label>Footer Yılı</label>
+                      <input
+                        type="number"
+                        min="2000"
+                        max="9999"
+                        value={contactForm.footerYear || new Date().getFullYear()}
+                        onChange={(e)=> setContactForm({...contactForm, footerYear: e.target.value})}
+                      />
                     </div>
                     <div style={{display:'flex', gap:10}}>
                       <button className="btn btn-primary" type="submit">Kaydet</button>

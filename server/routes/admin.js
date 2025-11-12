@@ -1139,7 +1139,7 @@ router.get('/settings', async (req, res) => {
 });
 
 router.patch('/settings', async (req, res) => {
-  const { maintenanceMode, maintenanceMessage, commissionRate, defaultSeo, contactEmail, contactPhone, contactAddress, openingHours, mapEmbedUrl, instagramUrl, visionText, missionText, statsHappyGuests, statsAvgRating, statsSupport, siteTitle, siteIcon, siteLogoWidth, siteLogoHeight, extraAdultPrice, extraChildPrice, includedAdultsCount, includedChildrenCount } = req.body;
+  const { maintenanceMode, maintenanceMessage, commissionRate, defaultSeo, contactEmail, contactPhone, contactAddress, openingHours, mapEmbedUrl, instagramUrl, footerNotice, footerYear, visionText, missionText, statsHappyGuests, statsAvgRating, statsSupport, siteTitle, siteIcon, siteLogoWidth, siteLogoHeight, extraAdultPrice, extraChildPrice, includedAdultsCount, includedChildrenCount } = req.body;
   let s = await Settings.findOne();
   if (!s) s = new Settings();
   if (typeof maintenanceMode === 'boolean') s.maintenanceMode = maintenanceMode;
@@ -1161,6 +1161,13 @@ router.patch('/settings', async (req, res) => {
     s.mapEmbedUrl = value;
   }
   if (typeof instagramUrl === 'string') s.instagramUrl = instagramUrl;
+  if (typeof footerNotice === 'string') s.footerNotice = footerNotice;
+  if (footerYear !== undefined) {
+    const parsedYear = Number(footerYear);
+    if (Number.isFinite(parsedYear) && parsedYear >= 2000 && parsedYear <= 9999) {
+      s.footerYear = parsedYear;
+    }
+  }
   if (typeof visionText === 'string') s.visionText = visionText;
   if (typeof missionText === 'string') s.missionText = missionText;
   if (typeof statsHappyGuests === 'string') s.statsHappyGuests = statsHappyGuests;
