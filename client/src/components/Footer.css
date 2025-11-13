@@ -95,7 +95,7 @@
 }
 
 .site-footer__links a:hover {
-  color: #1d4ed8;
+  color: #f97316;
   transform: translateX(2px);
 }
 
@@ -130,7 +130,7 @@
 }
 
 .site-footer__social a:hover {
-  color: #1d4ed8;
+  color: #f97316;
 }
 
 @media (max-width: 1024px) {
