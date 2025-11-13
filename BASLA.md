@@ -24,6 +24,7 @@ cp .env.example .env
 cp client\.env.example client\.env
 ```
 Ardından `.env` dosyalarını düzenleyerek zorunlu anahtarları doldurun (`MONGODB_URI`, `JWT_SECRET`, e-posta ayarları vb.).
+- Yönetim paneline ilk erişim için varsayılan bilgiler `admin / 123456` (süper admin) ve `mukaddes / 123456` (ikincil admin) olarak ayarlanır. İsterseniz `.env` dosyasında `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SECONDARY_ADMIN_EMAIL` ve `SECONDARY_ADMIN_PASSWORD` değerlerini değiştirin.
 
 ## 3. Script ile Otomatik Kurulum
 İlk kurulumu tek komutla tamamlayın:

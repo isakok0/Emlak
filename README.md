@@ -49,6 +49,9 @@ Zorunlu `.env` değerleri:
 - `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS` (opsiyonel ancak önerilir)
 - `CLIENT_URL` ve `API_URL` gibi origin bilgileri
 - Dosya yükleme için gerekli S3/R2 kimlik bilgileri (kullanılıyorsa)
+- `SUPERADMIN_EMAIL` ve `SUPERADMIN_PASSWORD` (opsiyonel; varsayılan `admin` / `123456`)
+- `SECONDARY_ADMIN_EMAIL` ve `SECONDARY_ADMIN_PASSWORD` (opsiyonel; varsayılan `mukaddes` / `123456`)
+- `BCRYPT_SALT_ROUNDS` (opsiyonel; varsayılan 12)
 
 `.env.example` dosyasını kopyalayarak başlayın ve tüm alanları doldurun.
 
