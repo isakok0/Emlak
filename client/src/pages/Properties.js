@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import PropertyCard from '../components/PropertyCard';
 import { FaSearch, FaFilter } from 'react-icons/fa';
@@ -7,14 +7,32 @@ import './Properties.css';
 import { setSEO } from '../utils/seo';
 
 const Properties = ({ initialFilters = {} }) => {
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const {
+    propertyType: initialPropertyType = '',
+    minPrice: initialMinPrice = '',
+    maxPrice: initialMaxPrice = '',
+    listingType: initialListingType = ''
+  } = initialFilters;
+  const forceFilters = Boolean(location.state?.forceFilters);
+  const clearFiltersState = Boolean(location.state?.clearFilters);
   const [properties, setProperties] = useState([]);
   const [suggestions, setSuggestions] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  // localStorage'dan filtreleri yükle veya varsayılan değerleri kullan
-  const getInitialFilters = () => {
-    // Önce localStorage'dan kontrol et
+  const paramsFilters = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return {
+      propertyType: params.get('propertyType') || initialPropertyType,
+      minPrice: params.get('minPrice') || initialMinPrice,
+      maxPrice: params.get('maxPrice') || initialMaxPrice,
+      listingType: params.get('listingType') || initialListingType
+    };
+  }, [location.search, initialPropertyType, initialMinPrice, initialMaxPrice, initialListingType]);
+
+  const hasParamsFilters = useMemo(() => Object.values(paramsFilters).some(Boolean), [paramsFilters]);
+
+  const loadSavedFilters = () => {
     try {
       const saved = localStorage.getItem('propertiesFilters');
       if (saved) {
@@ -27,13 +45,36 @@ const Properties = ({ initialFilters = {} }) => {
     } catch (e) {
       console.warn('Filtreler yüklenemedi:', e);
     }
+    return null;
+  };
+
+  // localStorage'dan filtreleri yükle veya varsayılan değerleri kullan
+  const getInitialFilters = () => {
+    if (clearFiltersState) {
+      try {
+        localStorage.removeItem('propertiesFilters');
+      } catch (e) {
+        console.warn('Filtreler temizlenemedi:', e);
+      }
+      return {
+        propertyType: '',
+        minPrice: '',
+        maxPrice: '',
+        listingType: ''
+      };
+    }
+
+    if (forceFilters || hasParamsFilters) {
+      return paramsFilters;
+    }
+
+    const saved = loadSavedFilters();
+    if (saved) {
+      return saved;
+    }
+
     // localStorage yoksa URL parametrelerinden veya initialFilters'dan al
-    return {
-      propertyType: searchParams.get('propertyType') || initialFilters.propertyType || '',
-      minPrice: searchParams.get('minPrice') || initialFilters.minPrice || '',
-      maxPrice: searchParams.get('maxPrice') || initialFilters.maxPrice || '',
-      listingType: searchParams.get('listingType') || initialFilters.listingType || ''
-    };
+    return paramsFilters;
   };
 
   const [filters, setFilters] = useState(getInitialFilters);
@@ -53,6 +94,49 @@ const Properties = ({ initialFilters = {} }) => {
   }, [isFiltersOpen, filters]);
 
   useEffect(() => {
+    if (clearFiltersState) {
+      const cleared = {
+        propertyType: '',
+        minPrice: '',
+        maxPrice: '',
+        listingType: ''
+      };
+      setFilters(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(cleared)) {
+          return prev;
+        }
+        return cleared;
+      });
+      setTempFilters(cleared);
+      try {
+        localStorage.removeItem('propertiesFilters');
+      } catch (e) {
+        console.warn('Filtreler temizlenemedi:', e);
+      }
+      return;
+    }
+
+    if (!(forceFilters || hasParamsFilters)) {
+      return;
+    }
+
+    setFilters(prev => {
+      const next = paramsFilters;
+      if (JSON.stringify(prev) === JSON.stringify(next)) {
+        return prev;
+      }
+      return next;
+    });
+    setTempFilters(paramsFilters);
+
+    try {
+      localStorage.setItem('propertiesFilters', JSON.stringify(paramsFilters));
+    } catch (e) {
+      console.warn('Filtreler kaydedilemedi:', e);
+    }
+  }, [paramsFilters, forceFilters, hasParamsFilters, clearFiltersState]);
+
+  useEffect(() => {
     // önceki listeden dönüldüyse pozisyona kaydır
     try {
       const y = sessionStorage.getItem('listScroll');
@@ -64,8 +148,11 @@ const Properties = ({ initialFilters = {} }) => {
   }, []);
 
   useEffect(() => {
-    const titleBase = 'Antalya Daireler | Günlük Kiralık Evim';
-    const typeLabel = filters.listingType === 'sale' ? 'Satılık' : (filters.listingType === 'rent_daily' ? 'Günlük Kiralık' : (filters.listingType === 'rent_monthly' ? 'Aylık Kiralık' : 'Tüm'));
+    const typeLabel = filters.listingType === 'sale'
+      ? 'Satılık'
+      : (filters.listingType === 'rent_daily'
+        ? 'Günlük Kiralık'
+        : (filters.listingType === 'rent_monthly' ? 'Aylık Kiralık' : 'Tüm'));
     setSEO({
       title: `${typeLabel} Daireler | Günlük Kiralık Evim`,
       description: `Antalya'da ${typeLabel.toLowerCase()} daireler. Filtreleyin, karşılaştırın ve size en uygun ilanı seçin.`,
@@ -140,7 +227,17 @@ const Properties = ({ initialFilters = {} }) => {
     <div className="properties-page">
       <div className="container">
         <div className="page-header">
-          <h1>Antalya - {filters.listingType === 'sale' ? 'Satılık Daireler' : filters.listingType === 'rent' ? 'Günlük Kiralık Daireler' : 'Tüm Daireler'}</h1>
+          <h1>
+            Antalya - {
+              filters.listingType === 'sale'
+                ? 'Satılık Daireler'
+                : filters.listingType === 'rent_daily'
+                  ? 'Günlük Kiralık Daireler'
+                  : filters.listingType === 'rent_monthly'
+                    ? 'Aylık Kiralık Daireler'
+                    : 'Tüm Daireler'
+            }
+          </h1>
           <p>Size en uygun daireyi bulmak için filtreleri kullanın</p>
         </div>
         

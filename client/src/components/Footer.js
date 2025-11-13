@@ -11,11 +11,11 @@ const infoLinks = [
 ];
 
 const quickLinks = [
-  { to: '/properties', label: 'Tüm Daireler' },
-  { to: '/rent', label: 'Günlük Kiralık' },
-  { to: '/rent-monthly', label: 'Aylık Kiralık' },
-  { to: '/sale', label: 'Satılık' },
-  { to: '/contact', label: 'İletişim' }
+  { to: '/properties', label: 'Tüm Daireler', search: '', state: { clearFilters: true } },
+  { to: '/properties', label: 'Günlük Kiralık', search: '?listingType=rent_daily', state: { forceFilters: true } },
+  { to: '/properties', label: 'Aylık Kiralık', search: '?listingType=rent_monthly', state: { forceFilters: true } },
+  { to: '/properties', label: 'Satılık', search: '?listingType=sale', state: { forceFilters: true } },
+  { to: '/contact', label: 'İletişim', search: '' }
 ];
 
 const defaultState = {
@@ -101,11 +101,16 @@ const Footer = () => {
             <div>
               <h4>Hızlı Erişim</h4>
               <ul>
-                {quickLinks.map((item) => (
-                  <li key={item.to}>
-                    <Link to={item.to}>{item.label}</Link>
+                {quickLinks.map((item) => {
+                  const href = item.search ? `${item.to}${item.search}` : item.to;
+                  return (
+                    <li key={`${item.to}-${item.search || 'default'}`}>
+                      <Link to={href} state={item.state}>
+                        {item.label}
+                      </Link>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </div>
             <div>
