@@ -1,93 +1,92 @@
-# 🚀 Hızlı Başlangıç Rehberi
+# 🚀 Hızlı Başlangıç
 
-## Docker ile Çalıştırma (Önerilen) 🐳
+Bu rehber, depo klonlandıktan sonra projeyi dakikalar içinde ayağa kaldırmanızı hedefler. Kapsamlı bilgi için `README.md`, kapsül özet için bu dosyayı kullanın.
 
-En kolay yöntem Docker kullanmaktır. MongoDB dahil tüm servisler otomatik başlar.
+## 0. Gereksinimler
+- Node.js 16+
+- npm veya yarn
+- Docker (opsiyonel ama önerilir)
+- MongoDB (yerel servis veya Docker container)
 
-### Production Modu
+## 1. Depoyu Hazırlayın
 ```powershell
-docker-compose up -d
+git clone <repo-url>
+cd <repo-klasoru>
 ```
-- Frontend: http://localhost
-- Backend: http://localhost:5000
-
-### Development Modu
-```powershell
-docker-compose -f docker-compose.dev.yml up
-```
-- Frontend: http://localhost:3000
-- Backend: http://localhost:5000
-
-**Detaylı bilgi için:** [DOCKER.md](DOCKER.md)
-
----
-
-## Manuel Kurulum
-
-## Projeyi Başlatma
-
-### 1. İlk Kurulum (İlk Defa Çalıştırıyorsanız)
-
-PowerShell'de proje klasöründe şu komutu çalıştırın:
-```powershell
-.\install.ps1
-```
-
-Bu script:
-- `.env` dosyasını oluşturur
-- Server bağımlılıklarını kurar
-- Client bağımlılıklarını kurar
-- `server/uploads` klasörünü oluşturur
-
-### 2. Projeyi Başlatma
-
-#### Seçenek 1: Otomatik Başlatma (Önerilen)
-```powershell
-.\start.ps1
-```
-
-#### Seçenek 2: Manuel Başlatma
-
-**Terminal 1 - Server:**
-```powershell
-npm run dev
-```
-
-**Terminal 2 - Client:**
-```powershell
-cd client
-npm start
-```
-
-### 3. MongoDB Kontrolü
-
-Projeyi çalıştırmadan önce MongoDB'nin çalıştığından emin olun:
-```powershell
-# MongoDB servisinin çalışıp çalışmadığını kontrol edin
-```
-
-### 4. Erişim Adresleri
-
-- **Server API:** http://localhost:5000
-- **Client (React):** http://localhost:3000
-- **Health Check:** http://localhost:5000/api/health
-
-## Önemli Notlar
-
-1. `.env` dosyası yoksa `install.ps1` scripti otomatik oluşturur
-2. MongoDB bağlantısı için MongoDB'nin çalışıyor olması gerekir
-3. İlk kurulumdan sonra sadece `start.ps1` ile başlatabilirsiniz
-
-## Sorun Giderme
-
-### PowerShell Script Çalışmıyorsa
+Klonlama sonrası PowerShell'de execution policy ayarlamak gerekebilir:
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### Port Zaten Kullanılıyorsa
-`.env` dosyasında `PORT` değerini değiştirin (örn: 5001)
+## 2. Gerekli Dosyaları Oluşturun
+```powershell
+cp .env.example .env
+cp client\.env.example client\.env
+```
+Ardından `.env` dosyalarını düzenleyerek zorunlu anahtarları doldurun (`MONGODB_URI`, `JWT_SECRET`, e-posta ayarları vb.).
 
-### MongoDB Bağlantı Hatası
-`.env` dosyasında `MONGODB_URI` değerini kontrol edin
+## 3. Script ile Otomatik Kurulum
+İlk kurulumu tek komutla tamamlayın:
+```powershell
+.\install.ps1
+```
+Script aşağıdakileri yapar:
+- Sunucu ve istemci bağımlılıklarını indirir
+- `server/uploads` gibi gerekli klasörleri oluşturur
+- Ortam dosyalarının varlığını doğrular
 
+## 4. Projeyi Başlatın
+### Otomatik (Önerilen)
+```powershell
+.\start.ps1
+```
+Script, API ve frontend'i paralel olarak başlatır.
+
+### Manuel Kurulum
+- Terminal 1:
+  ```powershell
+  npm run dev
+  ```
+- Terminal 2:
+  ```powershell
+  cd client
+  npm start
+  ```
+
+## 5. Docker ile Çalıştırma
+MongoDB dahil tüm servislerin konteyner ortamında çalışması için:
+```powershell
+docker-compose up -d
+```
+Geliştirme amaçlı override dosyasıyla:
+```powershell
+docker-compose -f docker-compose.dev.yml up
+```
+> Daha geniş senaryolar için `DOCKER.md` dosyasına bakın.
+
+## 6. Erişim Adresleri
+- Frontend (React): `http://localhost:3000` (Docker prod'da `http://localhost`)
+- Backend API: `http://localhost:5000`
+- Health check: `http://localhost:5000/api/health`
+
+## 7. Test ve Lint
+```powershell
+npm test
+npm run lint
+```
+Frontend için:
+```powershell
+cd client
+npm test
+```
+
+## 8. Sorun Giderme
+- **PowerShell scriptleri çalışmıyor:** Execution policy ayarını yukarıdaki komutla yapın.
+- **Port çakışması:** `.env` dosyasında `PORT` ve `CLIENT_PORT` değerlerini güncelleyin.
+- **MongoDB bağlantı hatası:** `MONGODB_URI` değerinin doğru olduğundan ve MongoDB servisinin çalıştığından emin olun.
+- **Docker başlatma hatası:** `docker-compose logs` ile logları inceleyin, gerekirse `docker system prune` yapın.
+
+## 9. Sonraki Adımlar
+- `README.md` içindeki mimari ve operasyonel önerileri okuyun.
+- Örnek veri gerekiyorsa `npm run seed` komutunu (varsa) çalıştırın.
+- CI/CD pipeline'ı için `npm test` ve `npm run lint` adımlarını zorunlu hale getirin.
