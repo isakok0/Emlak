@@ -233,7 +233,7 @@ const Home = () => {
               </div>
             </div>
             <div className="hero-actions">
-              <Link to="/properties" className="btn-hero primary">
+              <Link to="/properties" className="btn-hero primary" state={{ clearFilters: true }}>
                 Daireleri Keşfet
               </Link>
               <Link to="/kiralik" className="btn-hero secondary">

@@ -46,7 +46,7 @@ const Navbar = () => {
 
           <div className={`nav-menu ${mobileMenuOpen ? 'active' : ''}`}>
             <Link to="/" onClick={() => setMobileMenuOpen(false)}>Ana Sayfa</Link>
-            <Link to="/properties" onClick={() => setMobileMenuOpen(false)}>Daireler</Link>
+            <Link to="/properties" onClick={() => setMobileMenuOpen(false)} state={{ clearFilters: true }}>Daireler</Link>
             <Link to="/contact" onClick={() => setMobileMenuOpen(false)}>İletişim</Link>
           </div>
 
