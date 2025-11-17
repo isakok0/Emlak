@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../services/api';
 import PropertyCard from '../components/PropertyCard';
-import { FaSearch, FaFilter } from 'react-icons/fa';
+import { FaSearch, FaFilter, FaHome, FaTag, FaTimes, FaSort } from 'react-icons/fa';
 import './Properties.css';
 import { setSEO } from '../utils/seo';
 
@@ -242,40 +242,72 @@ const Properties = ({ initialFilters = {} }) => {
         </div>
         
         <div className="filters-toolbar">
-          <button className="btn btn-primary" onClick={()=>setIsFiltersOpen(true)}><FaFilter /> Filtrele</button>
-          <div className="sort-inline">
-            <label>Sırala</label>
-            <select value={sort} onChange={(e)=>setSort(e.target.value)}>
-              <option value="">Önerilen</option>
-              <option value="price_asc">Fiyat (Artan)</option>
-              <option value="price_desc">Fiyat (Azalan)</option>
-              <option value="views_desc">Popüler</option>
-            </select>
+          <button className="btn btn-primary" onClick={()=>setIsFiltersOpen(true)}>
+            <FaFilter className="btn-icon" />
+            Filtrele
+          </button>
+          <div className="sort-wrapper">
+            <label className="sort-label">
+              <FaSort className="sort-icon" />
+              Sırala
+            </label>
+            <div className="sort-select-wrapper">
+              <select 
+                className="sort-select"
+                value={sort} 
+                onChange={(e)=>setSort(e.target.value)}
+              >
+                <option value="">Önerilen</option>
+                <option value="price_asc">Fiyat (Artan)</option>
+                <option value="price_desc">Fiyat (Azalan)</option>
+                <option value="views_desc">Popüler</option>
+              </select>
+            </div>
           </div>
         </div>
 
         {isFiltersOpen && (
-          <div className="modal-overlay" onClick={()=>setIsFiltersOpen(false)}>
-            <div className="modal" onClick={(e)=>e.stopPropagation()}>
-              <div className="modal-header">
+          <div className="filters-modal-overlay" onClick={()=>setIsFiltersOpen(false)}>
+            <div className="filters-modal" onClick={(e)=>e.stopPropagation()}>
+              <div className="filters-modal-header">
+                <div className="filters-modal-icon">
+                  <FaFilter />
+                </div>
                 <h3>Filtrele</h3>
-                <button className="close" onClick={()=>setIsFiltersOpen(false)}>×</button>
+                <p className="filters-modal-subtitle">Size en uygun daireyi bulun</p>
+                <button className="filters-modal-close" onClick={()=>setIsFiltersOpen(false)} aria-label="Kapat">
+                  <FaTimes />
+                </button>
               </div>
-              <form onSubmit={handleSearch}>
-                <div className="modal-grid">
-                  <div className="filter-chip">
-                    <label>İlan</label>
-                    <select value={tempFilters.listingType} onChange={(e)=>handleFilterChange('listingType', e.target.value)}>
+              <form onSubmit={handleSearch} className="filters-form">
+                <div className="filters-form-content">
+                  <div className="filter-group">
+                    <label htmlFor="listingType">
+                      <FaTag className="filter-icon" />
+                      İlan Tipi
+                    </label>
+                    <select 
+                      id="listingType"
+                      value={tempFilters.listingType} 
+                      onChange={(e)=>handleFilterChange('listingType', e.target.value)}
+                    >
                       <option value="">Hepsi</option>
                       <option value="rent_daily">Günlük Kiralık</option>
                       <option value="rent_monthly">Aylık Kiralık</option>
-                      
                       <option value="sale">Satılık</option>
                     </select>
                   </div>
-                  <div className="filter-chip">
-                    <label>Tip</label>
-                    <select value={tempFilters.propertyType} onChange={(e)=>handleFilterChange('propertyType', e.target.value)}>
+                  
+                  <div className="filter-group">
+                    <label htmlFor="propertyType">
+                      <FaHome className="filter-icon" />
+                      Daire Tipi
+                    </label>
+                    <select 
+                      id="propertyType"
+                      value={tempFilters.propertyType} 
+                      onChange={(e)=>handleFilterChange('propertyType', e.target.value)}
+                    >
                       <option value="">Tümü</option>
                       <option value="1+0">1+0</option>
                       <option value="1+1">1+1</option>
@@ -285,35 +317,41 @@ const Properties = ({ initialFilters = {} }) => {
                     </select>
                   </div>
                   
-                  
-                  <div className="filter-chip">
-                    <label>Fiyat</label>
-                    <div className="price-inline">
+                  <div className="filter-group filter-group-price">
+                    <label>
+                      <FaTag className="filter-icon" />
+                      Fiyat Aralığı
+                    </label>
+                    <div className="price-range-inputs">
                       <input 
                         type="text" 
                         inputMode="numeric" 
                         pattern="[0-9]*"
-                        placeholder="Min" 
+                        placeholder="Min Fiyat" 
                         value={tempFilters.minPrice} 
                         onChange={(e)=>handleFilterChange('minPrice', e.target.value.replace(/[^0-9]/g, ''))} 
                       />
-                      <span>–</span>
+                      <span className="price-separator">–</span>
                       <input 
                         type="text" 
                         inputMode="numeric" 
                         pattern="[0-9]*"
-                        placeholder="Max" 
+                        placeholder="Max Fiyat" 
                         value={tempFilters.maxPrice} 
                         onChange={(e)=>handleFilterChange('maxPrice', e.target.value.replace(/[^0-9]/g, ''))} 
                       />
                     </div>
                   </div>
-                  
-                  
                 </div>
-                <div className="modal-actions">
-                  <button type="button" className="btn btn-secondary" onClick={clearFilters}>Temizle</button>
-                  <button type="submit" className="btn btn-primary"><FaSearch /> Uygula</button>
+                <div className="filters-modal-actions">
+                  <button type="button" className="btn-filter-clear" onClick={clearFilters}>
+                    <FaTimes className="btn-icon" />
+                    Temizle
+                  </button>
+                  <button type="submit" className="btn-filter-apply">
+                    <FaSearch className="btn-icon" />
+                    Filtrele
+                  </button>
                 </div>
               </form>
             </div>

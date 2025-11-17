@@ -418,4 +418,193 @@
   .contact-cards .contact-card a { text-align: center !important; }
 }
 
+/* Beautiful Contact Success Modal */
+.contact-success-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1300;
+  animation: contactFadeIn 0.2s ease-out;
+}
+
+@keyframes contactFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes contactSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes contactScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.contact-success-modal {
+  background: #ffffff;
+  border-radius: 24px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  animation: contactSlideUp 0.3s ease-out;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-success-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 40px 32px 32px;
+  text-align: center;
+  color: #ffffff;
+  position: relative;
+}
+
+.contact-success-icon {
+  width: 80px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 42px;
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  animation: contactScaleIn 0.4s ease-out 0.1s both;
+}
+
+.contact-success-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.contact-success-subtitle {
+  margin: 0;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 400;
+}
+
+.contact-success-body {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.contact-success-message {
+  margin: 0;
+  font-size: 16px;
+  color: #6b7280;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.contact-success-actions {
+  display: flex;
+  justify-content: center;
+  padding: 0 32px 32px;
+}
+
+.btn-contact-ok {
+  padding: 14px 40px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  width: 100%;
+  max-width: 200px;
+}
+
+.btn-contact-ok:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-contact-ok:active {
+  transform: translateY(0);
+}
+
+.btn-contact-ok .btn-icon {
+  font-size: 14px;
+}
+
+/* Responsive Contact Success Modal */
+@media (max-width: 640px) {
+  .contact-success-modal {
+    width: 95%;
+    max-width: 95%;
+    border-radius: 20px;
+  }
+
+  .contact-success-header {
+    padding: 32px 24px 24px;
+  }
+
+  .contact-success-icon {
+    width: 70px;
+    height: 70px;
+    font-size: 36px;
+    margin-bottom: 16px;
+  }
+
+  .contact-success-header h3 {
+    font-size: 24px;
+  }
+
+  .contact-success-subtitle {
+    font-size: 15px;
+  }
+
+  .contact-success-body {
+    padding: 24px 20px;
+    gap: 20px;
+  }
+
+  .contact-success-actions {
+    padding: 0 20px 24px;
+  }
+
+  .btn-contact-ok {
+    max-width: 100%;
+  }
+}
+
 

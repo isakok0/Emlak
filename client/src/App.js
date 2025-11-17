@@ -62,6 +62,7 @@ function App() {
   return (
     <AuthProvider>
       <Router>
+        <ScrollToTop />
         <RouteTracker disabled={showMaintenance} />
         <TrackingPixels facebookPixelId={trackingConfig.facebookPixelId} />
         <div className="App">
@@ -102,6 +103,32 @@ function App() {
 }
 
 export default App;
+
+const ScrollToTop = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    // Sayfa değiştiğinde scroll'u en üste al
+    // setTimeout ile biraz geciktiriyoruz ki diğer sayfa yükleme işlemleri tamamlansın
+    const timer = setTimeout(() => {
+      // Properties sayfasına geri dönüldüğünde scroll pozisyonunu korumak için
+      // sessionStorage kontrolü yapıyoruz
+      if (location.pathname === '/properties' && sessionStorage.getItem('listScroll')) {
+        // Properties sayfasındaki scroll geri yükleme mekanizması çalışsın
+        return;
+      }
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'instant'
+      });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
+  return null;
+};
 
 const RouteTracker = ({ disabled }) => {
   const location = useLocation();

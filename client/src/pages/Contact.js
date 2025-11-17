@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaClock, FaWhatsapp, FaInstagram, FaFacebook } from 'react-icons/fa';
+import { FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaClock, FaWhatsapp, FaInstagram, FaFacebook, FaCheckCircle } from 'react-icons/fa';
 import './Contact.css';
 import api from '../services/api';
 import { setSEO, addJSONLD } from '../utils/seo';
@@ -60,7 +60,6 @@ const Contact = () => {
       await api.post('/contact', formData);
       setSubmitted(true);
       setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
-      setTimeout(() => setSubmitted(false), 5000);
     } catch (error) {
       alert(error.response?.data?.message || 'Mesaj gönderilemedi');
     } finally {
@@ -174,16 +173,6 @@ const Contact = () => {
               Formu doldurup gönderin, size en kısa sürede geri dönüş yapalım.
             </p>
 
-            {submitted && (
-              <div className="success-message">
-                <FaEnvelope />
-                <div>
-                  <strong>Mesajınız Gönderildi!</strong>
-                  <p>Size en kısa sürede geri dönüş yapacağız.</p>
-                </div>
-              </div>
-            )}
-
             <form onSubmit={handleSubmit} className="contact-form">
               <div className="form-row">
                 <div className="input-group">
@@ -285,6 +274,36 @@ const Contact = () => {
 
         {/** SSS linki ana sayfaya taşındı **/}
       </div>
+
+      {/* Mesaj Başarı Modalı */}
+      {submitted && (
+        <div className="contact-success-overlay" onClick={() => setSubmitted(false)}>
+          <div className="contact-success-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="contact-success-header">
+              <div className="contact-success-icon">
+                <FaEnvelope />
+              </div>
+              <h3>Mesajınız Bize Ulaştı</h3>
+              <p className="contact-success-subtitle">Teşekkür ederiz!</p>
+            </div>
+            <div className="contact-success-body">
+              <p className="contact-success-message">
+                Mesajınız başarıyla gönderildi. En kısa sürede size geri dönüş yapacağız.
+              </p>
+            </div>
+            <div className="contact-success-actions">
+              <button 
+                type="button"
+                className="btn-contact-ok"
+                onClick={() => setSubmitted(false)}
+              >
+                <FaCheckCircle className="btn-icon" />
+                Tamam
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

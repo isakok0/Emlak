@@ -28,144 +28,352 @@
 .filters-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 
-.filters-toolbar .sort-inline {
-  margin-left: auto;
+.filters-toolbar .btn {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.filters-toolbar .sort-inline select {
-  padding: 10px 12px;
+.filters-toolbar .btn .btn-icon {
+  font-size: 14px;
+}
+
+.sort-wrapper {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  padding: 8px 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   border: 1px solid #e5e7eb;
+}
+
+.sort-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+  cursor: default;
+}
+
+.sort-icon {
+  color: #f59e0b;
+  font-size: 14px;
+}
+
+.sort-select-wrapper {
+  position: relative;
+}
+
+.sort-select {
+  padding: 10px 36px 10px 14px;
+  border: 2px solid #e5e7eb;
   border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1f2937;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px;
+  min-width: 160px;
 }
 
-/* Modal */
-.properties-page .modal-overlay {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(17,24,39,0.45) !important;
-  display: grid !important;
-  place-items: center !important;
-  z-index: 50 !important;
+.sort-select:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
 }
 
-.properties-page .modal {
-  width: 480px !important;
-  height: auto !important;
-  max-width: 480px !important;
-  max-height: 90vh !important;
-  min-width: 480px !important;
-  background: #fff !important;
-  border-radius: 12px !important;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2) !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
+.sort-select:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
 }
 
-.properties-page .modal-header {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  padding: 16px 20px !important;
-  border-bottom: 1px solid #f0f2f5 !important;
-  flex: 0 0 auto !important;
+.sort-select option {
+  padding: 10px;
+  font-size: 14px;
 }
 
-.properties-page .modal-header h3 {
-  font-size: 18px !important;
-  margin: 0 !important;
-  font-weight: 600 !important;
+/* Beautiful Filters Modal */
+.filters-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  animation: filtersFadeIn 0.2s ease-out;
 }
 
-.properties-page .modal form {
-  display: flex !important;
-  flex-direction: column !important;
-  flex: 0 0 auto !important;
-  overflow: hidden !important;
+@keyframes filtersFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-.properties-page .modal-header .close {
-  background: transparent !important;
-  border: none !important;
-  font-size: 24px !important;
-  line-height: 1 !important;
-  cursor: pointer !important;
-  color: #333 !important;
+@keyframes filtersSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.properties-page .modal-grid {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0,1fr)) !important;
-  gap: 16px !important;
-  padding: 20px !important;
-  align-content: start !important;
-  flex: 0 0 auto !important;
-  overflow: hidden !important;
+@keyframes filtersScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
-.properties-page .modal-actions {
-  display: flex !important;
-  justify-content: flex-end !important;
-  gap: 10px !important;
-  padding: 16px 20px !important;
-  border-top: 1px solid #f0f2f5 !important;
-  flex: 0 0 auto !important;
+.filters-modal {
+  background: #ffffff;
+  border-radius: 24px;
+  width: 90%;
+  max-width: 550px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  animation: filtersSlideUp 0.3s ease-out;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
 }
 
-.properties-page .modal-actions .btn {
-  padding: 10px 20px !important;
-  font-size: 14px !important;
+.filters-modal-header {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  padding: 32px 32px 24px;
+  position: relative;
+  text-align: center;
+  color: #ffffff;
+}
+
+.filters-modal-icon {
+  width: 64px;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  font-size: 28px;
+  color: #ffffff;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  animation: filtersScaleIn 0.4s ease-out 0.1s both;
+}
+
+.filters-modal-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.filters-modal-subtitle {
+  margin: 0;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 400;
+}
+
+.filters-modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.filters-modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg);
+}
+
+.filters-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.filters-form-content {
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.filter-group label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-icon {
+  color: #f59e0b;
+  font-size: 16px;
+}
+
+.filter-group select,
+.filter-group input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 15px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.filter-group select:focus,
+.filter-group input:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+}
+
+.filter-group select::placeholder,
+.filter-group input::placeholder {
+  color: #9ca3af;
+}
+
+/* Number input spinner'larını gizle */
+.filter-group input[type="number"]::-webkit-inner-spin-button,
+.filter-group input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.filter-group input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.filter-group-price {
+  grid-column: 1 / -1;
+}
+
+.price-range-inputs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.price-separator {
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.filters-modal-actions {
+  display: flex;
+  gap: 12px;
+  padding: 24px 32px 32px;
+  border-top: 1px solid #f3f4f6;
+  margin-top: auto;
+}
+
+.btn-filter-clear,
+.btn-filter-apply {
+  flex: 1;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-filter-clear {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-filter-clear:hover {
+  background: #e5e7eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-filter-apply {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.btn-filter-apply:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+}
+
+.btn-filter-apply:active,
+.btn-filter-clear:active {
+  transform: translateY(0);
+}
+
+.btn-filter-apply .btn-icon,
+.btn-filter-clear .btn-icon {
+  font-size: 14px;
 }
 
 .filters-compact .filters-bar.compact {
   align-items: end;
-}
-
-.filter-chip {
-  display: flex;
-  flex-direction: column;
-}
-
-.properties-page .modal .filter-chip label {
-  font-size: 12px !important;
-  color: #475467 !important;
-  margin-bottom: 6px !important;
-  font-weight: 700 !important;
-}
-
-.properties-page .modal .filter-chip select,
-.properties-page .modal .filter-chip input {
-  padding: 10px 12px !important;
-  border: 1px solid #e5e7eb !important;
-  border-radius: 8px !important;
-  font-size: 14px !important;
-  background: #fff !important;
-  box-shadow: 0 1px 2px rgba(16,24,40,0.05) !important;
-}
-
-/* Number input spinner'larını gizle */
-.properties-page .modal .filter-chip input[type="number"]::-webkit-inner-spin-button,
-.properties-page .modal .filter-chip input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none !important;
-  margin: 0 !important;
-}
-
-.properties-page .modal .filter-chip input[type="number"] {
-  -moz-appearance: textfield !important;
-}
-
-.properties-page .modal .price-inline {
-  display: grid !important;
-  grid-template-columns: 1fr auto 1fr !important;
-  gap: 8px !important;
-  align-items: center !important;
 }
 
 .date-inline {
@@ -255,74 +463,84 @@
   .suggestions-wrapper {
     padding: 32px 20px;
   }
+
+  .filters-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .sort-wrapper {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .sort-select {
+    min-width: 140px;
+    flex: 1;
+  }
 }
 
-/* 375px ve altı için filtre modalı optimizasyonu */
-@media (max-width: 480px) {
-  .properties-page .modal {
-    width: calc(100vw - 20px) !important;
-    max-width: calc(100vw - 20px) !important;
-    min-width: unset !important;
-    max-height: 85vh !important;
-    margin: 10px !important;
+/* Responsive Filters Modal */
+@media (max-width: 640px) {
+  .filters-modal {
+    width: 95%;
+    max-width: 95%;
+    border-radius: 20px;
+    max-height: 95vh;
   }
 
-  .properties-page .modal-grid {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
-    padding: 16px !important;
+  .filters-modal-header {
+    padding: 24px 20px 20px;
   }
 
-  /* Kart içeriği okunabilirliği ve dokunma alanları */
-  .properties-page .modal .filter-chip { gap: 6px !important; }
-  .properties-page .modal .filter-chip select,
-  .properties-page .modal .filter-chip input {
-    height: 44px !important;
-    line-height: 44px !important;
+  .filters-modal-icon {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+    margin-bottom: 12px;
   }
 
-  .properties-page .modal-header {
-    padding: 12px 16px !important;
+  .filters-modal-header h3 {
+    font-size: 24px;
   }
 
-  .properties-page .modal-header h3 {
-    font-size: 16px !important;
+  .filters-modal-subtitle {
+    font-size: 14px;
   }
 
-  .properties-page .modal-actions {
-    flex-direction: column !important;
-    gap: 8px !important;
-    padding: 12px 16px !important;
+  .filters-modal-close {
+    top: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
   }
 
-  .properties-page .modal-actions .btn {
-    width: 100% !important;
-    padding: 12px 20px !important;
-    font-size: 15px !important;
+  .filters-form-content {
+    padding: 24px 20px;
+    gap: 20px;
   }
 
-  .properties-page .modal .filter-chip label {
-    font-size: 13px !important;
-    margin-bottom: 8px !important;
+  .price-range-inputs {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .properties-page .modal .filter-chip select,
-  .properties-page .modal .filter-chip input {
-    padding: 12px !important;
-    font-size: 15px !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
+  .price-separator {
+    display: none;
   }
 
-  .properties-page .modal .price-inline {
-    grid-template-columns: 1fr !important; /* Min-Max alt alta */
-    gap: 8px !important;
-    align-items: stretch !important;
+  .filters-modal-actions {
+    flex-direction: column;
+    gap: 10px;
+    padding: 20px;
   }
 
-  .properties-page .modal .price-inline input { height: 44px !important; width: 100% !important; }
-  .properties-page .modal .price-inline span {
-    display: none !important; /* tireyi gizle */
+  .btn-filter-clear,
+  .btn-filter-apply {
+    width: 100%;
   }
 }
 

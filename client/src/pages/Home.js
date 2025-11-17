@@ -525,21 +525,55 @@ const Home = () => {
 
   {/* Yorum Yap Modal */}
   {showReviewModal && (
-    <div className="modal-overlay" onClick={()=> setShowReviewModal(false)} style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200}}>
-      <div className="modal" onClick={(e)=> e.stopPropagation()} style={{background: '#fff', borderRadius: '12px', padding: '20px', width: '800px', height: 'auto', maxWidth: '800px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column'}}>
-        <h3 style={{margin: '0 0 16px 0', fontSize: '20px', fontWeight: 600}}>Yorum Yap</h3>
-        <form onSubmit={submitReview} className="review-form" style={{width: '100%', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
-          <div className="form-row" style={{display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px'}}>
-            <label style={{fontSize: '15px', fontWeight: 500}}>Ad Soyad</label>
-            <input type="text" value={reviewName} onChange={(e)=> setReviewName(toTitleCaseTr(e.target.value))} placeholder="Adınız Soyadınız" style={{height: '40px', padding: '8px 12px', fontSize: '15px', border: '1px solid #e6e8ee', borderRadius: '6px', width: '100%', boxSizing: 'border-box'}} />
+    <div className="review-modal-overlay" onClick={()=> setShowReviewModal(false)}>
+      <div className="review-modal" onClick={(e)=> e.stopPropagation()}>
+        <div className="review-modal-header">
+          <div className="review-modal-icon">
+            <FaStar />
           </div>
-          <div className="form-row" style={{display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px', flex: 1, minHeight: 0}}>
-            <label style={{fontSize: '15px', fontWeight: 500}}>Yorum</label>
-            <textarea rows="3" value={reviewText} onChange={(e)=> setReviewText(e.target.value)} placeholder="Deneyiminizi paylaşın" style={{flex: 1, padding: '8px 12px', fontSize: '15px', border: '1px solid #e6e8ee', borderRadius: '6px', width: '100%', boxSizing: 'border-box', resize: 'none', minHeight: 0}} />
+          <h3>Yorumunuzu Paylaşın</h3>
+          <p className="review-modal-subtitle">Deneyiminizi diğer misafirlerle paylaşın</p>
+          <button className="review-modal-close" onClick={()=> setShowReviewModal(false)} aria-label="Kapat">
+            <span>×</span>
+          </button>
+        </div>
+        <form onSubmit={submitReview} className="review-form">
+          <div className="review-form-group">
+            <label htmlFor="reviewName">
+              <FaSmile className="form-icon" />
+              Ad Soyad
+            </label>
+            <input 
+              id="reviewName"
+              type="text" 
+              value={reviewName} 
+              onChange={(e)=> setReviewName(toTitleCaseTr(e.target.value))} 
+              placeholder="Adınız Soyadınız"
+              required
+            />
           </div>
-          <div className="modal-actions" style={{display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: 'auto', paddingTop: '12px', width: '100%'}}>
-            <button type="button" className="btn btn-secondary" onClick={()=> setShowReviewModal(false)} style={{padding: '10px 20px', fontSize: '15px', margin: 0}}>İptal</button>
-            <button type="submit" className="btn btn-primary" style={{padding: '10px 20px', fontSize: '15px', margin: 0}}>Gönder</button>
+          <div className="review-form-group">
+            <label htmlFor="reviewText">
+              <FaStar className="form-icon" />
+              Yorumunuz
+            </label>
+            <textarea 
+              id="reviewText"
+              rows="5" 
+              value={reviewText} 
+              onChange={(e)=> setReviewText(e.target.value)} 
+              placeholder="Deneyiminizi detaylı bir şekilde paylaşın..."
+              required
+            />
+          </div>
+          <div className="review-modal-actions">
+            <button type="button" className="btn-review-cancel" onClick={()=> setShowReviewModal(false)}>
+              İptal
+            </button>
+            <button type="submit" className="btn-review-submit">
+              <FaStar className="btn-icon" />
+              Yorumu Gönder
+            </button>
           </div>
         </form>
       </div>
@@ -548,24 +582,25 @@ const Home = () => {
 
   {/* Başarı Modalı */}
   {showSuccessModal && (
-    <div className="modal-overlay" onClick={()=> setShowSuccessModal(false)} style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300}}>
-      <div className="modal success-modal" onClick={(e)=> e.stopPropagation()} style={{background: '#fff', borderRadius: '10px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)'}}>
-        <p style={{
-          fontSize: '14px',
-          color: '#333',
-          lineHeight: '1.4',
-          fontWeight: 500
-        }}>Yorumunuz başarıyla eklendi!</p>
-        <div className="modal-actions">
-          <button 
-            type="button"
-            className="btn btn-primary"
-            onClick={()=> setShowSuccessModal(false)}
-            style={{fontSize: '13px', margin: 0}}
-          >
-            Tamam
-          </button>
+    <div className="success-modal-overlay" onClick={()=> setShowSuccessModal(false)}>
+      <div className="success-modal" onClick={(e)=> e.stopPropagation()}>
+        <div className="success-modal-icon-wrapper">
+          <div className="success-checkmark">
+            <FaCheckCircle />
+          </div>
         </div>
+        <h3 className="success-modal-title">Yorumunuz Başarıyla Eklendi!</h3>
+        <p className="success-modal-message">
+          Yorumunuz yayınlandı. Teşekkür ederiz!
+        </p>
+        <button 
+          type="button"
+          className="btn-success-ok"
+          onClick={()=> setShowSuccessModal(false)}
+        >
+          <FaCheckCircle className="btn-icon" />
+          Tamam
+        </button>
       </div>
     </div>
   )}

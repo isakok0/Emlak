@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { FaShieldAlt } from 'react-icons/fa';
+import { FaShieldAlt, FaCheckCircle, FaCalendarAlt, FaHome, FaArrowLeft } from 'react-icons/fa';
 import api from '../services/api';
 
 const Checkout = () => {
@@ -254,18 +254,38 @@ const Checkout = () => {
       )}
 
       {showConfirm && (
-        <div className="modal-overlay" onClick={()=>{setShowConfirm(false); navigate('/');}}>
-          <div className="modal modal-confirm" onClick={(e)=>e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="reservation-success-overlay" onClick={()=>{setShowConfirm(false); navigate('/');}}>
+          <div className="reservation-success-modal" onClick={(e)=>e.stopPropagation()}>
+            <div className="reservation-success-header">
+              <div className="reservation-success-icon">
+                <FaCheckCircle />
+              </div>
               <h3>Talebiniz Alındı</h3>
+              <p className="reservation-success-subtitle">Rezervasyon talebiniz bize ulaştı</p>
             </div>
-            <div style={{padding:'16px 20px'}}>
-              <p>Rezervasyon talebiniz bize ulaştı. En kısa sürede sizinle iletişime geçeceğiz.</p>
-              <p><strong>Tarih:</strong> {new Date(checkIn).toLocaleDateString()} → {new Date(checkOut).toLocaleDateString()}</p>
+            <div className="reservation-success-body">
+              <p className="reservation-success-message">
+                En kısa sürede sizinle iletişime geçeceğiz.
+              </p>
+              <div className="reservation-date-info">
+                <FaCalendarAlt className="date-icon" />
+                <div className="date-content">
+                  <span className="date-label">Rezervasyon Tarihi</span>
+                  <span className="date-range">
+                    {new Date(checkIn).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} → {new Date(checkOut).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={()=>navigate('/properties')}>Dairelere Dön</button>
-              <button className="btn btn-primary" onClick={()=>navigate('/')}>Ana Sayfa</button>
+            <div className="reservation-success-actions">
+              <button className="btn-reservation-secondary" onClick={()=>navigate('/properties')}>
+                <FaArrowLeft className="btn-icon" />
+                Dairelere Dön
+              </button>
+              <button className="btn-reservation-primary" onClick={()=>navigate('/')}>
+                <FaHome className="btn-icon" />
+                Ana Sayfa
+              </button>
             </div>
           </div>
         </div>
