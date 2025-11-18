@@ -13,6 +13,7 @@ const moment = require('moment');
 const emailService = require('../services/emailService');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const fetch = require('node-fetch');
 
 const router = express.Router();
@@ -1189,14 +1190,38 @@ router.patch('/settings', async (req, res) => {
 router.post('/brand/logo', auth, admin, upload.single('logo'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Logo dosyası gerekli' });
+    
     let s = await Settings.findOne();
     if (!s) s = new Settings();
+    
+    // Eski logo dosyasını sil
+    if (s.siteLogoUrl) {
+      try {
+        const oldLogoPath = (s.siteLogoUrl || '').replace(/\\/g, '/');
+        let rel = null;
+        if (oldLogoPath.startsWith('/uploads')) {
+          rel = oldLogoPath.slice(1); // 'uploads/...'
+        } else if (oldLogoPath.startsWith('uploads')) {
+          rel = oldLogoPath;
+        }
+        if (rel) {
+          const filePath = path.join(__dirname, '..', rel);
+          await fs.promises.unlink(filePath).catch((err) => {
+            console.warn(`Eski logo silinemedi: ${filePath}`, err?.message || err);
+          });
+        }
+      } catch (error) {
+        console.warn('Eski logo silme hatası:', error?.message || error);
+      }
+    }
+    
+    // Yeni logo URL'ini kaydet
     s.siteLogoUrl = `/uploads/${req.file.filename}`;
     await s.save();
     res.json({ url: s.siteLogoUrl });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Logo yükleme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası: ' + (error.message || 'Bilinmeyen hata') });
   }
 });
 

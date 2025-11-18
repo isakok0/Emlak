@@ -267,31 +267,109 @@ router.post('/', auth, upload.array('images', 50), [
 
     // Parse nested objects
     if (typeof propertyData.location === 'string') {
-      propertyData.location = JSON.parse(propertyData.location);
+      try {
+        propertyData.location = JSON.parse(propertyData.location);
+      } catch (e) {
+        propertyData.location = { city: 'Antalya' };
+      }
     }
     if (typeof propertyData.pricing === 'string') {
-      try { propertyData.pricing = JSON.parse(propertyData.pricing); } catch(_) { propertyData.pricing = {}; }
+      try { 
+        propertyData.pricing = JSON.parse(propertyData.pricing); 
+      } catch(_) { 
+        propertyData.pricing = {}; 
+      }
     }
     if (typeof propertyData.amenities === 'string') {
-      propertyData.amenities = JSON.parse(propertyData.amenities);
+      try {
+        propertyData.amenities = JSON.parse(propertyData.amenities);
+      } catch(_) {
+        propertyData.amenities = [];
+      }
+    }
+    if (typeof propertyData.rules === 'string') {
+      try {
+        propertyData.rules = JSON.parse(propertyData.rules);
+      } catch(_) {
+        propertyData.rules = [];
+      }
     }
 
     // City default: Antalya; gelen değer varsa koru
     if (!propertyData.location) propertyData.location = {};
     propertyData.location.city = propertyData.location.city || 'Antalya';
 
+    // Coordinates temizleme - geçersiz değerleri kaldır
+    if (propertyData.location) {
+      if (
+        propertyData.location.coordinates === undefined ||
+        propertyData.location.coordinates === null ||
+        propertyData.location.coordinates === 'undefined' ||
+        (typeof propertyData.location.coordinates !== 'object') ||
+        Array.isArray(propertyData.location.coordinates)
+      ) {
+        delete propertyData.location.coordinates;
+      } else if (
+        propertyData.location.coordinates &&
+        propertyData.location.coordinates.lat === undefined &&
+        propertyData.location.coordinates.lng === undefined
+      ) {
+        delete propertyData.location.coordinates;
+      }
+    }
+
     // Fiyat zorunluluğu: daily yoksa 0 olarak setle
     if (!propertyData.pricing) propertyData.pricing = {};
     const parsedDaily = Number(propertyData.pricing.daily);
     propertyData.pricing.daily = Number.isFinite(parsedDaily) ? parsedDaily : 0;
+
+    // Required alanları kontrol et ve sayıya çevir
+    if (propertyData.size === undefined || propertyData.size === null || propertyData.size === '') {
+      propertyData.size = 0;
+    } else {
+      propertyData.size = Number(propertyData.size) || 0;
+    }
+    if (propertyData.bedrooms === undefined || propertyData.bedrooms === null || propertyData.bedrooms === '') {
+      propertyData.bedrooms = 1;
+    } else {
+      propertyData.bedrooms = Number(propertyData.bedrooms) || 1;
+    }
+    if (propertyData.bathrooms === undefined || propertyData.bathrooms === null || propertyData.bathrooms === '') {
+      propertyData.bathrooms = 1;
+    } else {
+      propertyData.bathrooms = Number(propertyData.bathrooms) || 1;
+    }
+
+    // ListingType default
+    if (!propertyData.listingType) {
+      propertyData.listingType = 'rent_daily';
+    }
 
     const property = new Property(propertyData);
     await property.save();
 
     res.status(201).json(property);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Property create error:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Request body:', req.body);
+    
+    // Mongoose validation hatası
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message
+      }));
+      return res.status(400).json({ 
+        message: 'Validasyon hatası',
+        errors: validationErrors 
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Sunucu hatası: ' + (error.message || 'Bilinmeyen hata'),
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined 
+    });
   }
 });
 
@@ -331,6 +409,7 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
     delete req.body.owner;
 
     // Mevcut görseller listesi (frontend'den existingImages olarak gelebilir)
+    const oldImages = property.images || [];
     let updatedImages = property.images || [];
     if (typeof req.body.existingImages === 'string') {
       try { req.body.existingImages = JSON.parse(req.body.existingImages); } catch(_) {}
@@ -346,6 +425,34 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
       }));
       updatedImages = [...updatedImages, ...newImages];
     }
+    
+    // Silinen görselleri bul ve uploads klasöründen sil
+    const oldImageUrls = oldImages.map(img => img.url).filter(Boolean);
+    const newImageUrls = updatedImages.map(img => img.url).filter(Boolean);
+    const deletedImageUrls = oldImageUrls.filter(url => !newImageUrls.includes(url));
+    
+    if (deletedImageUrls.length > 0) {
+      try {
+        await Promise.all(deletedImageUrls.map((imgUrl) => {
+          const raw = (imgUrl || '').replace(/\\/g, '/');
+          if (!raw) return Promise.resolve();
+          let rel = null;
+          if (raw.startsWith('/uploads')) {
+            rel = raw.slice(1); // 'uploads/...'
+          } else if (raw.startsWith('uploads')) {
+            rel = raw;
+          }
+          if (!rel) return Promise.resolve();
+          const filePath = path.join(__dirname, '..', rel);
+          return fs.promises.unlink(filePath).catch((err) => {
+            console.warn(`Görsel silinemedi: ${filePath}`, err?.message || err);
+          });
+        }));
+      } catch (error) {
+        console.warn('Görsel silme hatası:', error?.message || error);
+      }
+    }
+    
     property.images = updatedImages;
 
     // Parse nested objects from FormData
