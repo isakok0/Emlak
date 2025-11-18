@@ -139,7 +139,7 @@ const PropertyDetail = () => {
     if (!dayStart) return null;
     return normalizedBookings.find((booking) => {
       if (!booking.checkInDate || !booking.checkOutDate) return false;
-      return booking.checkInDate.getTime() <= dayStart.getTime() && booking.checkOutDate.getTime() > dayStart.getTime();
+      return booking.checkInDate.getTime() <= dayStart.getTime() && booking.checkOutDate.getTime() >= dayStart.getTime();
     }) || null;
   };
 
@@ -149,25 +149,7 @@ const PropertyDetail = () => {
     let label = 'Müsait';
     let tooltip = `${dayKey} • Müsait`;
 
-    const slot = Array.isArray(property?.availability)
-      ? property.availability.find((item) => toDateKey(item?.date) === dayKey)
-      : null;
-
-    if (slot) {
-      if (slot.status === 'pending_request') {
-        status = 'pending';
-        label = 'Talep';
-        tooltip = `${dayKey} • Bekleyen talep`;
-      } else if (slot.status === 'confirmed') {
-        status = 'confirmed';
-        label = 'Dolu';
-        tooltip = `${dayKey} • Onaylı rezervasyon`;
-      } else if (slot.status === 'available') {
-        status = 'available';
-        label = 'Müsait';
-      }
-    }
-
+    // Önce booking kontrolü yap (booking durumu öncelikli)
     const booking = getBookingForDate(day);
     if (booking) {
       const paymentStatus = booking?.payment?.status || 'pending';
@@ -195,9 +177,31 @@ const PropertyDetail = () => {
         label = 'Müsait';
         tooltip = `${rangeLabel} • Tamamlandı (boş)`;
       } else {
+        // confirmed ve payment completed
         status = 'confirmed';
         label = 'Dolu';
         tooltip = `${rangeLabel} • Ödeme alındı`;
+      }
+      return { status, label, tooltip };
+    }
+
+    // Booking yoksa slot durumuna bak
+    const slot = Array.isArray(property?.availability)
+      ? property.availability.find((item) => toDateKey(item?.date) === dayKey)
+      : null;
+
+    if (slot) {
+      if (slot.status === 'pending_request') {
+        status = 'pending';
+        label = 'Talep';
+        tooltip = `${dayKey} • Bekleyen talep`;
+      } else if (slot.status === 'confirmed') {
+        status = 'confirmed';
+        label = 'Dolu';
+        tooltip = `${dayKey} • Onaylı rezervasyon`;
+      } else if (slot.status === 'available') {
+        status = 'available';
+        label = 'Müsait';
       }
     }
 
@@ -385,7 +389,7 @@ const PropertyDetail = () => {
       setProperty(res.data);
       resetCalendarToToday();
 
-      if (res.data.listingType !== 'sale') {
+      if (res.data.listingType === 'rent_daily') {
         loadCalendarBookings(res.data?._id);
         
         // Dolu tarihleri çıkar (confirmed booking'ler)
@@ -407,8 +411,8 @@ const PropertyDetail = () => {
             bookingsRes.data.forEach(booking => {
               const checkIn = new Date(booking.checkIn);
               const checkOut = new Date(booking.checkOut);
-              // checkIn'den checkOut'a kadar (checkOut hariç) tüm günleri exclude et
-              for (let d = new Date(checkIn); d < checkOut; d.setDate(d.getDate() + 1)) {
+              // checkIn'den checkOut'a kadar (checkOut dahil) tüm günleri exclude et
+              for (let d = new Date(checkIn); d <= checkOut; d.setDate(d.getDate() + 1)) {
                 const date = new Date(d);
                 date.setHours(0, 0, 0, 0);
                 if (!excluded.some(ex => ex.getTime() === date.getTime())) {
@@ -729,7 +733,7 @@ const PropertyDetail = () => {
               </div>
             </div>
 
-            {!isSale && (
+            {property.listingType === 'rent_daily' && (
               <div className="property-info-section property-calendar">
                 <div className="property-calendar__header">
                   <h2>Müsaitlik Takvimi</h2>
@@ -935,7 +939,7 @@ const PropertyDetail = () => {
               <div className="booking-form">
                 <div className={`booking-dates${property.listingType === 'rent_daily' ? ' has-checkout' : ''}`}>
                   <div className="input-group">
-                    <label>Giriş Tarihi</label>
+                    <label>{property.listingType === 'rent_daily' ? 'Giriş Tarihi' : 'Rezervasyon Tarihi'}</label>
                     <DatePicker
                       selected={checkIn}
                       onChange={(date) => {
@@ -948,7 +952,7 @@ const PropertyDetail = () => {
                       minDate={new Date()}
                       excludeDates={excludedDates}
                       dateFormat="dd/MM/yyyy"
-                      placeholderText="Giriş tarihi seçin"
+                      placeholderText={property.listingType === 'rent_daily' ? 'Giriş tarihi seçin' : 'Rezervasyon tarihi seçin'}
                       className="date-input"
                       filterDate={(date) => {
                         // Dolu tarihleri engelle

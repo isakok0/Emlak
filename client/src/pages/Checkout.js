@@ -272,7 +272,20 @@ const Checkout = () => {
                 <div className="date-content">
                   <span className="date-label">Rezervasyon Tarihi</span>
                   <span className="date-range">
-                    {new Date(checkIn).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} → {new Date(checkOut).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {(() => {
+                      const format = (value) =>
+                        value
+                          ? new Date(value).toLocaleDateString('tr-TR', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            })
+                          : '—';
+                      if (property?.listingType === 'rent_daily') {
+                        return `${format(checkIn)} → ${format(checkOut)}`;
+                      }
+                      return format(checkIn);
+                    })()}
                   </span>
                 </div>
               </div>

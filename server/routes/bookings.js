@@ -47,10 +47,10 @@ router.post('/', [
     // Müsaitlik kontrolü - frontend'de zaten dolu tarihler seçilemez
     // Backend'de sadece log tutulur, hata döndürülmez
     const availability = propertyDoc.availability || [];
-    const bookingDates = [];
-    for (let d = new Date(checkInDate); d < checkOutDate; d.setDate(d.getDate() + 1)) {
-      bookingDates.push(moment.utc(d).format('YYYY-MM-DD'));
-    }
+  const bookingDates = [];
+  for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
+    bookingDates.push(moment.utc(d).format('YYYY-MM-DD'));
+  }
 
     // Log için kontrol (hata döndürülmez)
     const existingConfirmedBookings = await Booking.find({
@@ -64,7 +64,8 @@ router.post('/', [
       const requestedCheckIn = moment.utc(checkInDate).startOf('day');
       const requestedCheckOut = moment.utc(checkOutDate).startOf('day');
 
-      if (requestedCheckIn.isBefore(existingCheckOut) && requestedCheckOut.isAfter(existingCheckIn)) {
+    const overlapsOnStart = requestedCheckIn.isBefore(existingCheckOut) || requestedCheckIn.isSame(existingCheckOut);
+    if (overlapsOnStart && requestedCheckOut.isAfter(existingCheckIn)) {
         // Çakışma var ama hata döndürülmez, sadece log
         console.log(`Uyarı: Rezervasyon çakışması tespit edildi (Property: ${property}, Booking: ${booking._id})`);
       }

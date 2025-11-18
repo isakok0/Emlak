@@ -1634,7 +1634,9 @@ const AllBookings = () => {
     try {
       const url = statusFilter ? `/admin/bookings?status=${statusFilter}` : '/admin/bookings';
       const res = await api.get(url);
-      setBookings(res.data);
+      const safeData = Array.isArray(res.data) ? res.data : [];
+      const visibleBookings = safeData.filter((booking) => booking.status !== 'pending_request');
+      setBookings(visibleBookings);
     } catch (error) {
       console.error('Rezervasyonlar yüklenemedi:', error);
     } finally {
@@ -1683,7 +1685,6 @@ const AllBookings = () => {
         <div className="filter-bar">
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">Tüm Durumlar</option>
-            <option value="pending_request">Bekleyen Talep</option>
             <option value="confirmed">Onaylanmış</option>
             <option value="cancelled">İptal Edilmiş</option>
             <option value="completed">Tamamlanmış</option>
@@ -1691,7 +1692,7 @@ const AllBookings = () => {
         </div>
       </div>
 
-      <div className="all-bookings-grid">
+      <div className="requests-grid">
         {bookings.map((booking, index) => (
           <BookingCard
             key={booking._id}
@@ -1735,41 +1736,45 @@ const BookingCard = ({ booking, index, onAction }) => {
     completed: 'completed'
   };
 
-  const entryDate = new Date(booking.checkIn).toLocaleDateString('tr-TR');
-  const exitDate = booking.property?.listingType === 'rent_daily'
+  const bookingListingType = booking.property?.listingType || booking.listingType;
+  const entryDate = booking.checkIn
+    ? new Date(booking.checkIn).toLocaleDateString('tr-TR')
+    : '—';
+  const exitDate = booking.checkOut && bookingListingType === 'rent_daily'
     ? new Date(booking.checkOut).toLocaleDateString('tr-TR')
     : null;
   const totalAmount = booking.pricing?.total || booking.pricing?.monthly || booking.pricing?.daily || 0;
   const paymentCompleted = booking.payment?.status === 'completed';
+  const formattedTotal = typeof totalAmount === 'number'
+    ? totalAmount.toLocaleString('tr-TR')
+    : totalAmount;
+  const guestInfo = booking.guestInfo || {};
 
   return (
-    <div className={`request-item booking-card request-item--${statusClassMap[booking.status] || 'default'}`}>
+    <div className={`request-item request-item--${statusClassMap[booking.status] || 'default'}`}>
       <div className="request-header">
         <div>
-          <h3>{booking.property?.title || `Rezervasyon #${index}`}</h3>
-          <p className="request-date">#{String(index).padStart(2, '0')} • {booking.guestInfo.name}</p>
-          <p className="request-subtext">{booking.guestInfo.email} • {booking.guestInfo.phone}</p>
+          <h3 style={{margin:0}}>{booking.property?.title || `Rezervasyon #${index}`}</h3>
+          <p style={{margin: '5px 0', color: '#666', fontSize: '14px'}}>
+            #{String(index).padStart(2, '0')} • {guestInfo.name || 'Misafir'}
+          </p>
         </div>
         <span className={`booking-status booking-status--${statusClassMap[booking.status] || 'default'}`}>
-          {statusLabels[booking.status] || 'Bilinmiyor'}
+          {statusLabels[booking.status] || '—'}
         </span>
       </div>
-
-      <div className="request-info booking-card-info">
+      <div className="request-info">
         <p><strong>Giriş:</strong> {entryDate}</p>
-        {exitDate && (
+        {exitDate && bookingListingType === 'rent_daily' && (
           <p><strong>Çıkış:</strong> {exitDate}</p>
         )}
-        <p><strong>Toplam:</strong> ₺{totalAmount}</p>
+        <p><strong>Telefon:</strong> {guestInfo.phone || '—'}</p>
+        <p><strong>E-posta:</strong> {guestInfo.email || '—'}</p>
         <p>
-          <strong>Ödeme:</strong>
-          <span className={`booking-pill ${paymentCompleted ? 'booking-pill--success' : 'booking-pill--warning'}`}>
-            {paymentCompleted ? 'Ödeme Alındı' : 'Bekliyor'}
-          </span>
+          <strong>Toplam:</strong> ₺{formattedTotal}
         </p>
       </div>
-
-      <div className="booking-card-actions">
+      <div className="action-buttons" style={{display:'flex', gap:12, marginTop:12}}>
         {booking.status === 'completed' || booking.status === 'cancelled' ? (
           <button className="btn btn-danger" onClick={()=>onAction('delete')}>Sil</button>
         ) : (
