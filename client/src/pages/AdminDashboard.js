@@ -279,11 +279,15 @@ const [contactForm, setContactForm] = useState({
     if (!Array.isArray(bookings) || !bookings.length) return null;
     const dayStart = stripTime(day);
     if (!dayStart) return null;
+    const dayTime = dayStart.getTime();
     return bookings.find((booking) => {
       const checkIn = stripTime(booking.checkIn);
       const checkOut = stripTime(booking.checkOut);
       if (!checkIn || !checkOut) return false;
-      return checkIn.getTime() <= dayStart.getTime() && checkOut.getTime() > dayStart.getTime();
+      const checkInTime = checkIn.getTime();
+      const checkOutTime = checkOut.getTime();
+      // Giriş tarihi <= gün <= çıkış tarihi (çıkış dahil)
+      return checkInTime <= dayTime && checkOutTime >= dayTime;
     }) || null;
   };
 
@@ -295,6 +299,37 @@ const [contactForm, setContactForm] = useState({
     let label = '';
     let tooltip = `${dayKey} • Müsait`;
 
+    // Önce booking kontrolü yap (booking durumu öncelikli)
+    if (booking) {
+      const guestName = booking?.guestInfo?.name || booking?.guest?.name || 'Misafir';
+      const paymentStatus = booking?.payment?.status || 'pending';
+      
+      if (booking.status === 'pending_request') {
+        status = 'pending';
+        label = '!';
+        tooltip = `${formatBookingRange(booking)} • ${guestName} • Beklemede`;
+      } else if (booking.status === 'cancelled') {
+        status = 'cancelled';
+        label = '–';
+        tooltip = `${formatBookingRange(booking)} • ${guestName} • İptal edildi`;
+      } else if (booking.status === 'completed') {
+        status = 'available';
+        label = '';
+        tooltip = `${formatBookingRange(booking)} • ${guestName} • Tamamlandı (boş)`;
+      } else if (booking.status === 'confirmed' && paymentStatus !== 'completed') {
+        status = 'pending';
+        label = '!';
+        tooltip = `${formatBookingRange(booking)} • ${guestName} • Bekleniyor`;
+      } else {
+        // confirmed ve payment completed - çıkış tarihi de dahil
+        status = 'confirmed';
+        label = '✓';
+        tooltip = `${formatBookingRange(booking)} • ${guestName} • Onaylı`;
+      }
+      return { status, label, tooltip };
+    }
+
+    // Booking yoksa slot durumuna bak
     const slot = Array.isArray(property?.availability)
       ? property.availability.find((item) => toDateKey(item?.date) === dayKey)
       : null;
@@ -308,27 +343,6 @@ const [contactForm, setContactForm] = useState({
         status = 'confirmed';
         label = '✓';
         tooltip = `${dayKey} • Onaylı rezervasyon`;
-      }
-    }
-
-    if (booking) {
-      const guestName = booking?.guestInfo?.name || booking?.guest?.name || 'Misafir';
-      if (booking.status === 'pending_request') {
-        status = 'pending';
-        label = '!';
-        tooltip = `${formatBookingRange(booking)} • ${guestName} • Beklemede`;
-      } else if (booking.status === 'cancelled') {
-        status = 'cancelled';
-        label = '–';
-        tooltip = `${formatBookingRange(booking)} • ${guestName} • İptal edildi`;
-      } else if (booking.status === 'completed') {
-        status = 'available';
-        label = '';
-        tooltip = `${formatBookingRange(booking)} • ${guestName} • Tamamlandı (boş)`;
-      } else {
-        status = 'confirmed';
-        label = '✓';
-        tooltip = `${formatBookingRange(booking)} • ${guestName} • Onaylı`;
       }
     }
 

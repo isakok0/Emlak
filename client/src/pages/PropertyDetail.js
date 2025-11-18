@@ -137,14 +137,19 @@ const PropertyDetail = () => {
   const getBookingForDate = (day) => {
     const dayStart = stripTime(day);
     if (!dayStart) return null;
+    const dayTime = dayStart.getTime();
     return normalizedBookings.find((booking) => {
       if (!booking.checkInDate || !booking.checkOutDate) return false;
-      return booking.checkInDate.getTime() <= dayStart.getTime() && booking.checkOutDate.getTime() >= dayStart.getTime();
+      const checkInTime = booking.checkInDate.getTime();
+      const checkOutTime = booking.checkOutDate.getTime();
+      // Giriş tarihi <= gün <= çıkış tarihi (çıkış dahil)
+      return checkInTime <= dayTime && checkOutTime >= dayTime;
     }) || null;
   };
 
   const getDayStatus = (day) => {
     const dayKey = toDateKey(day);
+    const dayStart = stripTime(day);
     let status = 'available';
     let label = 'Müsait';
     let tooltip = `${dayKey} • Müsait`;
@@ -159,6 +164,10 @@ const PropertyDetail = () => {
         if (!checkInLabel || !checkOutLabel) return '';
         return `${checkInLabel} - ${checkOutLabel}`;
       })();
+
+      // Çıkış tarihi kontrolü: çıkış tarihi de rezervasyonun bir parçası
+      const isCheckOutDate = dayStart && booking.checkOutDate && 
+        dayStart.getTime() === booking.checkOutDate.getTime();
 
       if (booking.status === 'pending_request') {
         status = 'pending';
@@ -177,10 +186,12 @@ const PropertyDetail = () => {
         label = 'Müsait';
         tooltip = `${rangeLabel} • Tamamlandı (boş)`;
       } else {
-        // confirmed ve payment completed
+        // confirmed ve payment completed - çıkış tarihi de dahil
         status = 'confirmed';
         label = 'Dolu';
-        tooltip = `${rangeLabel} • Ödeme alındı`;
+        tooltip = isCheckOutDate 
+          ? `${rangeLabel} • Çıkış günü (Ödeme alındı)`
+          : `${rangeLabel} • Ödeme alındı`;
       }
       return { status, label, tooltip };
     }
