@@ -245,13 +245,19 @@ router.get('/reviews', async (req, res) => {
 // Reviews - delete
 router.delete('/reviews/:id', async (req, res) => {
   try {
-    const review = await Review.findByPk(req.params.id);
-    if (!review) return res.status(404).json({ message: 'Yorum bulunamadı' });
+    const reviewId = req.params.id;
+    // _id veya id olarak gelebilir, her ikisini de kontrol et
+    const review = await Review.findByPk(reviewId);
+    if (!review) {
+      return res.status(404).json({ message: 'Yorum bulunamadı' });
+    }
+    // Veritabanından sil
     await review.destroy();
-    res.json({ success: true });
+    console.log(`[Admin Reviews] Yorum silindi: ${reviewId}`);
+    res.json({ success: true, message: 'Yorum başarıyla silindi' });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('[Admin Reviews] Silme hatası:', error);
+    res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 });
 
@@ -333,7 +339,55 @@ router.post('/reviews/seed', async (req, res) => {
 
     console.log(`[Seed Reviews] ${users.length} kullanıcı ve ${properties.length} daire bulundu`);
 
-    // 3. Rastgele yorumlar oluştur
+    // 3. Tek bir dummy booking oluştur (tüm yorumlar için kullanılacak)
+    // Mevcut dummy booking'i bul veya oluştur
+    let dummyBooking = await Booking.findOne({ 
+      where: { 
+        requestType: 'manual',
+        status: 'completed',
+        adminNotes: { [Op.like]: '%REVIEW_SEED_DUMMY%' }
+      }
+    });
+
+    if (!dummyBooking) {
+      // Dummy booking oluştur - ilk property ve ilk user ile
+      const firstProperty = properties[0];
+      const firstUser = users[0];
+      const pastDate = new Date();
+      pastDate.setFullYear(pastDate.getFullYear() - 1);
+      const futureDate = new Date(pastDate);
+      futureDate.setDate(futureDate.getDate() + 1);
+
+      dummyBooking = await Booking.create({
+        propertyId: firstProperty.id,
+        guestId: firstUser.id,
+        checkIn: pastDate,
+        checkOut: futureDate,
+        guestsAdults: 1,
+        guestsChildren: 0,
+        pricingDailyRate: 0,
+        pricingTotalDays: 1,
+        pricingSubtotal: 0,
+        pricingServiceFee: 0,
+        pricingTax: 0,
+        pricingTotal: 0,
+        paymentMethod: 'cash',
+        paymentStatus: 'completed',
+        status: 'completed',
+        requestType: 'manual',
+        guestInfo: JSON.stringify({ 
+          name: 'Seed Review Dummy',
+          email: 'dummy@seed.review',
+          phone: '0000000000'
+        }),
+        adminNotes: 'REVIEW_SEED_DUMMY - Bu rezervasyon seed yorumları için kullanılmaktadır.',
+        policiesAccepted: true,
+        policiesAcceptedAt: new Date()
+      });
+      console.log('[Seed Reviews] Dummy booking oluşturuldu');
+    }
+
+    // 4. Rastgele yorumlar oluştur (booking oluşturulmadan)
     const reviewCount = parseInt(req.body.count, 10) || 30;
     const reviewsToCreate = [];
 
@@ -376,50 +430,10 @@ router.post('/reviews/seed', async (req, res) => {
       const property = getRandomElement(properties);
       const rating = getRandomRating();
 
-      // Guest bilgileri - kullanıcı datası eksikse doldur
-      const guestName = user.name || randomName;
-      const guestEmail = user.email || `seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
-      const guestPhone = user.phone || '0000000000';
-
-      // Rastgele konaklama tarihleri (geçmiş 90 gün içinde)
-      const stayLength = Math.floor(Math.random() * 4) + 1; // 1-4 gece
-      const checkIn = new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000);
-      const checkOut = new Date(checkIn);
-      checkOut.setDate(checkOut.getDate() + stayLength);
-
-      const dailyRate = parseFloat(property.pricingDaily) || 100;
-      const subtotal = dailyRate * stayLength;
-
-      const booking = await Booking.create({
-        propertyId: property.id,
-        guestId: user.id,
-        checkIn,
-        checkOut,
-        guestsAdults: 2,
-        guestsChildren: Math.random() > 0.7 ? 1 : 0,
-        pricingDailyRate: dailyRate,
-        pricingTotalDays: stayLength,
-        pricingSubtotal: subtotal,
-        pricingServiceFee: 0,
-        pricingTax: 0,
-        pricingTotal: subtotal,
-        paymentMethod: 'cash',
-        paymentStatus: 'completed',
-        status: 'completed',
-        requestType: 'manual',
-        guestInfo: {
-          name: guestName,
-          email: guestEmail,
-          phone: guestPhone
-        },
-        adminNotes: 'AUTO_GENERATED_REVIEW_SEED',
-        policiesAccepted: true,
-        policiesAcceptedAt: new Date()
-      });
-
+      // Tüm yorumlar için aynı dummy booking'i kullan
       const review = {
         propertyId: property.id,
-        bookingId: booking.id,
+        bookingId: dummyBooking.id, // Tek bir dummy booking kullan
         userId: user.id,
         ratingOverall: rating,
         ratingCleanliness: getRandomSubRating(),

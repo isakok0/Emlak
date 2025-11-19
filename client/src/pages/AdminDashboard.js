@@ -990,9 +990,11 @@ const [contactForm, setContactForm] = useState({
                     // Populate edilmemiş veriler için fallback
                     const userName = rv.user?.name || (typeof rv.user === 'string' ? 'Kullanıcı' : 'Kullanıcı');
                     const createdAt = rv.createdAt ? new Date(rv.createdAt).toLocaleDateString('tr-TR') : 'Tarih yok';
+                    // ID'yi hem _id hem id'den al (toJSON metodu _id döndürüyor)
+                    const reviewId = rv._id || rv.id;
                     
                     return (
-                      <div key={rv._id || Math.random()} className="review-card">
+                      <div key={reviewId || Math.random()} className="review-card">
                         <div className="review-card__meta">
                           <span className="review-card__name">{userName}</span>
                           <span className="review-card__date">{createdAt}</span>
@@ -1005,7 +1007,7 @@ const [contactForm, setContactForm] = useState({
                           )}
                         </div>
                         <div className="review-card__actions">
-                          <button className="btn btn-danger review-card__delete" onClick={()=> setConfirmDelete({ type: 'review', id: rv._id })}>Sil</button>
+                          <button className="btn btn-danger review-card__delete" onClick={()=> setConfirmDelete({ type: 'review', id: reviewId })}>Sil</button>
                         </div>
                       </div>
                     );
