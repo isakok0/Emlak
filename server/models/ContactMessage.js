@@ -1,15 +1,53 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const contactMessageSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  email: { type: String, required: true, trim: true, lowercase: true },
-  phone: { type: String, required: true, trim: true },
-  subject: { type: String, required: true, trim: true },
-  message: { type: String, required: true, trim: true },
-  status: { type: String, enum: ['new', 'read', 'archived'], default: 'new' },
-  createdAt: { type: Date, default: Date.now }
+const ContactMessage = sequelize.define('ContactMessage', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    trim: true
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    trim: true,
+    lowercase: true
+  },
+  phone: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    trim: true
+  },
+  subject: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    trim: true
+  },
+  message: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+    trim: true
+  },
+  status: {
+    type: DataTypes.ENUM('new', 'read', 'archived'),
+    defaultValue: 'new'
+  }
+}, {
+  tableName: 'contact_messages',
+  timestamps: true
 });
 
-module.exports = mongoose.model('ContactMessage', contactMessageSchema);
+// Mongoose uyumluluğu için toJSON
+ContactMessage.prototype.toJSON = function() {
+  const values = { ...this.get() };
+  values._id = values.id;
+  delete values.id;
+  return values;
+};
 
-
+module.exports = ContactMessage;

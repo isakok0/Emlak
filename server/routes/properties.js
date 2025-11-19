@@ -13,81 +13,7 @@ const parseNumber = value => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const effectivePriceExpr = {
-  $switch: {
-    branches: [
-      { case: { $eq: ['$listingType', 'rent_monthly'] }, then: { $ifNull: ['$pricing.monthly', 0] } },
-      { case: { $eq: ['$listingType', 'sale'] }, then: { $ifNull: ['$pricing.daily', 0] } },
-      { case: { $eq: ['$listingType', 'rent'] }, then: { $ifNull: ['$pricing.daily', 0] } }
-    ],
-    default: { $ifNull: ['$pricing.daily', 0] }
-  }
-};
 
-const buildPriceExpr = ({ min, max, exclusiveMin = false, exclusiveMax = false }) => {
-  const clauses = [];
-  if (min !== undefined) {
-    const op = exclusiveMin ? '$gt' : '$gte';
-    clauses.push({ [op]: [effectivePriceExpr, min] });
-  }
-  if (max !== undefined) {
-    const op = exclusiveMax ? '$lt' : '$lte';
-    clauses.push({ [op]: [effectivePriceExpr, max] });
-  }
-  if (!clauses.length) return null;
-  return clauses.length === 1 ? clauses[0] : { $and: clauses };
-};
-
-const applyPriceExpr = (filter, options = {}) => {
-  const expr = buildPriceExpr(options);
-  if (!expr) return filter;
-  if (filter.$expr) {
-    filter.$expr = { $and: [filter.$expr, expr] };
-  } else {
-    filter.$expr = expr;
-  }
-  return filter;
-};
-
-const buildAggregationPipeline = ({ matchFilter, sortStages, limit }) => {
-  const pipeline = [
-    { $match: matchFilter },
-    {
-      $addFields: {
-        pricingSort: effectivePriceExpr,
-        listingSort: {
-          $switch: {
-            branches: [
-              { case: { $eq: ['$listingType', 'rent_daily'] }, then: 1 },
-              { case: { $eq: ['$listingType', 'rent_monthly'] }, then: 2 },
-              { case: { $eq: ['$listingType', 'sale'] }, then: 3 }
-            ],
-            default: 4
-          }
-        }
-      }
-    }
-  ];
-
-  sortStages
-    .filter(Boolean)
-    .forEach(stage => pipeline.push({ $sort: stage }));
-
-  if (limit) {
-    pipeline.push({ $limit: limit });
-  }
-
-  pipeline.push({ $unset: ['pricingSort', 'listingSort'] });
-
-  return pipeline;
-};
-
-const aggregateAndPopulate = async ({ matchFilter, sortStages, limit }) => {
-  const pipeline = buildAggregationPipeline({ matchFilter, sortStages, limit });
-  const docs = await Property.aggregate(pipeline);
-  await Property.populate(docs, { path: 'owner', select: 'name email phone' });
-  return docs;
-};
 
 // Multer configuration for file uploads
 const storage = multer.diskStorage({
@@ -116,7 +42,17 @@ const upload = multer({
 router.get('/', async (req, res) => {
   try {
     const { propertyType, minPrice, maxPrice, amenities, listingType, featured, sort, bedroomsMin, sizeMin, ownerVerified } = req.query;
-    const baseFilter = { 'location.city': 'Antalya', $or: [ { isActive: true }, { isActive: { $exists: false } } ] };
+    const { User: UserModel } = require('../models');
+    const { Op } = require('sequelize');
+    const sequelize = require('../config/database');
+    
+    const baseFilter = { 
+      locationCity: 'Antalya',
+      [Op.or]: [
+        { isActive: true },
+        { isActive: { [Op.is]: null } }
+      ]
+    };
 
     if (propertyType) baseFilter.propertyType = propertyType;
     if (listingType) {
@@ -126,25 +62,51 @@ router.get('/', async (req, res) => {
     if (featured === 'true') baseFilter.isFeatured = true;
     if (amenities) {
       const amenityList = Array.isArray(amenities) ? amenities : [amenities];
-      baseFilter.amenities = { $all: amenityList };
+      baseFilter[Op.and] = amenityList.map(amenity => 
+        sequelize.literal(`JSON_CONTAINS(amenities, '"${amenity}"')`)
+      );
     }
-    if (bedroomsMin) baseFilter.bedrooms = { $gte: Number(bedroomsMin) };
-    if (sizeMin) baseFilter.size = { $gte: Number(sizeMin) };
+    if (bedroomsMin) baseFilter.bedrooms = { [Op.gte]: Number(bedroomsMin) };
+    if (sizeMin) baseFilter.size = { [Op.gte]: Number(sizeMin) };
     if (ownerVerified === 'true') baseFilter.ownerVerified = true;
 
     const minPriceValue = parseNumber(minPrice);
     const maxPriceValue = parseNumber(maxPrice);
-    const filter = applyPriceExpr({ ...baseFilter }, { min: minPriceValue, max: maxPriceValue });
+    
+    // Fiyat filtreleme
+    if (minPriceValue !== undefined || maxPriceValue !== undefined) {
+      let priceField = 'pricingDaily';
+      if (listingType === 'rent_monthly') priceField = 'pricingMonthly';
+      const priceFilter = {};
+      if (minPriceValue !== undefined) priceFilter[Op.gte] = minPriceValue;
+      if (maxPriceValue !== undefined) priceFilter[Op.lte] = maxPriceValue;
+      baseFilter[priceField] = priceFilter;
+    }
 
-    let sortOpt = { createdAt: -1 };
-    if (sort === 'price_asc') sortOpt = [ { pricingSort: 1 }, { listingSort: 1 } ];
-    if (sort === 'price_desc') sortOpt = [ { pricingSort: -1 }, { listingSort: -1 } ];
-    if (sort === 'rating_desc') sortOpt = { 'rating.average': -1 };
-    if (sort === 'views_desc') sortOpt = { views: -1 };
+    let order = [['createdAt', 'DESC']];
+    if (sort === 'price_asc') {
+      order = [
+        [sequelize.literal('CASE WHEN listing_type = "rent_daily" THEN 1 WHEN listing_type = "rent_monthly" THEN 2 WHEN listing_type = "sale" THEN 3 ELSE 4 END'), 'ASC'],
+        [sequelize.literal('CASE WHEN listing_type = "rent_monthly" THEN pricing_monthly WHEN listing_type = "sale" THEN pricing_daily ELSE pricing_daily END'), 'ASC']
+      ];
+    } else if (sort === 'price_desc') {
+      order = [
+        [sequelize.literal('CASE WHEN listing_type = "rent_daily" THEN 1 WHEN listing_type = "rent_monthly" THEN 2 WHEN listing_type = "sale" THEN 3 ELSE 4 END'), 'DESC'],
+        [sequelize.literal('CASE WHEN listing_type = "rent_monthly" THEN pricing_monthly WHEN listing_type = "sale" THEN pricing_daily ELSE pricing_daily END'), 'DESC']
+      ];
+    } else if (sort === 'rating_desc') {
+      order = [['ratingAverage', 'DESC']];
+    } else if (sort === 'views_desc') {
+      order = [['views', 'DESC']];
+    }
 
-    const sortStages = Array.isArray(sortOpt) ? sortOpt : [sortOpt];
-
-    const properties = await aggregateAndPopulate({ matchFilter: filter, sortStages });
+    const properties = await Property.findAll({
+      where: baseFilter,
+      include: [{ model: UserModel, as: 'owner', attributes: ['name', 'email', 'phone'] }],
+      order: order
+    });
+    
+    const propertiesData = properties.map(p => p.toJSON());
 
     let suggestions = null;
 
@@ -172,31 +134,34 @@ router.get('/', async (req, res) => {
         nearBudgetLimit: 6
       };
 
-      const cheaperQuery = relaxedMin !== undefined
-        ? buildFlexFilter({ min: relaxedMin, max: budget })
-        : buildFlexFilter({ max: budget });
+      const cheaperFilter = { ...baseFilter };
+      if (relaxedMin !== undefined) {
+        cheaperFilter.pricingDaily = { [Op.gte]: relaxedMin, [Op.lte]: budget };
+      } else {
+        cheaperFilter.pricingDaily = { [Op.lte]: budget };
+      }
+      
       const aboveMin = minPriceValue !== undefined ? Math.max(minPriceValue, budget) : budget;
-      const aboveExclusiveMin = minPriceValue === undefined || aboveMin === budget;
+      const slightlyAboveFilter = { ...baseFilter };
+      slightlyAboveFilter.pricingDaily = { [Op.gte]: aboveMin, [Op.lte]: budget * 1.2 };
 
-      const slightlyAboveQuery = buildFlexFilter({
-        min: aboveMin,
-        max: budget * 1.2,
-        exclusiveMin: aboveExclusiveMin
-      });
-
-      const nearBudgetCheaper = await aggregateAndPopulate({
-        matchFilter: cheaperQuery,
-        sortStages: [ { pricingSort: -1 } ],
+      const nearBudgetCheaper = await Property.findAll({
+        where: cheaperFilter,
+        include: [{ model: UserModel, as: 'owner', attributes: ['name', 'email', 'phone'] }],
+        order: [[sequelize.literal('CASE WHEN listing_type = "rent_monthly" THEN pricing_monthly WHEN listing_type = "sale" THEN pricing_daily ELSE pricing_daily END'), 'DESC']],
         limit: limits.nearBudgetLimit
       });
 
-      const nearBudgetAbove = await aggregateAndPopulate({
-        matchFilter: slightlyAboveQuery,
-        sortStages: [ { pricingSort: 1 } ],
+      const nearBudgetAbove = await Property.findAll({
+        where: slightlyAboveFilter,
+        include: [{ model: UserModel, as: 'owner', attributes: ['name', 'email', 'phone'] }],
+        order: [[sequelize.literal('CASE WHEN listing_type = "rent_monthly" THEN pricing_monthly WHEN listing_type = "sale" THEN pricing_daily ELSE pricing_daily END'), 'ASC']],
         limit: limits.nearBudgetLimit
       });
 
-      const nearBudgetCombined = [...nearBudgetCheaper, ...nearBudgetAbove].slice(0, limits.nearBudgetLimit);
+      const cheaperData = nearBudgetCheaper.map(p => p.toJSON());
+      const aboveData = nearBudgetAbove.map(p => p.toJSON());
+      const nearBudgetCombined = [...cheaperData, ...aboveData].slice(0, limits.nearBudgetLimit);
 
       suggestions = nearBudgetCombined.length
         ? {
@@ -207,7 +172,7 @@ router.get('/', async (req, res) => {
     }
 
     res.json({
-      results: properties,
+      results: propertiesData,
       suggestions
     });
   } catch (error) {
@@ -219,21 +184,21 @@ router.get('/', async (req, res) => {
 // Get single property
 router.get('/:id', async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id)
-      .populate('owner', 'name email phone')
-      .populate({
-        path: 'availability.bookingId',
-        model: 'Booking',
-        select: 'checkIn checkOut status'
-      });
+    const { User: UserModel } = require('../models');
+    const property = await Property.findByPk(req.params.id, {
+      include: [
+        { model: UserModel, as: 'owner', attributes: ['name', 'email', 'phone'] }
+      ]
+    });
 
     if (!property) {
       return res.status(404).json({ message: 'Daire bulunamadı' });
     }
 
     // basit görüntülenme sayacı
-    property.views = (property.views || 0) + 1;
-    await property.save();
+    const propertyData = property.toJSON();
+    const views = (propertyData.views || 0) + 1;
+    await property.update({ views: views });
 
     res.json(property);
   } catch (error) {
@@ -261,7 +226,7 @@ router.post('/', auth, upload.array('images', 50), [
 
     const propertyData = {
       ...req.body,
-      owner: req.user._id,
+      ownerId: req.user.id,
       images
     };
 
@@ -345,8 +310,37 @@ router.post('/', auth, upload.array('images', 50), [
       propertyData.listingType = 'rent_daily';
     }
 
-    const property = new Property(propertyData);
-    await property.save();
+    // Sequelize formatına çevir
+    const sequelizeData = {
+      title: propertyData.title,
+      description: propertyData.description,
+      locationCity: propertyData.location?.city || 'Antalya',
+      locationDistrict: propertyData.location?.district,
+      locationNeighborhood: propertyData.location?.neighborhood,
+      locationAddress: propertyData.location?.address,
+      locationCoordinates: propertyData.location?.coordinates,
+      propertyType: propertyData.propertyType,
+      listingType: propertyData.listingType,
+      isFeatured: propertyData.isFeatured || false,
+      ownerVerified: propertyData.ownerVerified || false,
+      size: propertyData.size,
+      bedrooms: propertyData.bedrooms,
+      bathrooms: propertyData.bathrooms,
+      amenities: propertyData.amenities || [],
+      images: images,
+      videoUrl: propertyData.videoUrl,
+      pricingDaily: propertyData.pricing?.daily || 0,
+      pricingWeekly: propertyData.pricing?.weekly,
+      pricingMonthly: propertyData.pricing?.monthly,
+      seasonalRates: propertyData.pricing?.seasonalRates || [],
+      availability: propertyData.availability || [],
+      rules: propertyData.rules || [],
+      nearbyAttractions: propertyData.nearbyAttractions || [],
+      ownerId: propertyData.ownerId,
+      isActive: propertyData.isActive !== false
+    };
+
+    const property = await Property.create(sequelizeData);
 
     res.status(201).json(property);
   } catch (error) {
@@ -354,12 +348,12 @@ router.post('/', auth, upload.array('images', 50), [
     console.error('Error stack:', error.stack);
     console.error('Request body:', req.body);
     
-    // Mongoose validation hatası
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => ({
+    // Sequelize validation hatası
+    if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+      const validationErrors = error.errors ? error.errors.map(err => ({
         field: err.path,
         message: err.message
-      }));
+      })) : [{ field: 'unknown', message: error.message }];
       return res.status(400).json({ 
         message: 'Validasyon hatası',
         errors: validationErrors 
@@ -376,13 +370,12 @@ router.post('/', auth, upload.array('images', 50), [
 // Toggle featured status
 router.patch('/:id/featured', auth, admin, async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    const property = await Property.findByPk(req.params.id);
     if (!property) {
       return res.status(404).json({ message: 'Daire bulunamadı' });
     }
 
-    property.isFeatured = !!req.body.isFeatured;
-    await property.save();
+    await property.update({ isFeatured: !!req.body.isFeatured });
 
     res.json(property);
   } catch (error) {
@@ -394,14 +387,47 @@ router.patch('/:id/featured', auth, admin, async (req, res) => {
 // Update property
 router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    const property = await Property.findByPk(req.params.id);
     
     if (!property) {
       return res.status(404).json({ message: 'Daire bulunamadı' });
     }
 
+    const propertyData = property.toJSON();
+    const normalizeImages = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          return [];
+        }
+      }
+      return [];
+    };
+    const mapImageInput = (img) => {
+      if (!img) return null;
+      if (typeof img === 'string') {
+        return { url: img, caption: '' };
+      }
+      if (typeof img === 'object') {
+        const url = img.url || img.path || img.src || '';
+        return url ? { url, caption: img.caption || '' } : null;
+      }
+      return null;
+    };
+    const extractUrls = (images = []) => images
+      .map((img) => {
+        if (!img) return null;
+        if (typeof img === 'string') return img;
+        if (typeof img === 'object') return img.url || null;
+        return null;
+      })
+      .filter(Boolean);
     // Owner veya admin kontrolü
-    if (property.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (propertyData.owner !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Yetkiniz yok' });
     }
 
@@ -409,13 +435,20 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
     delete req.body.owner;
 
     // Mevcut görseller listesi (frontend'den existingImages olarak gelebilir)
-    const oldImages = property.images || [];
-    let updatedImages = property.images || [];
+    const oldImages = normalizeImages(propertyData.images);
+    let updatedImages = [...oldImages];
     if (typeof req.body.existingImages === 'string') {
       try { req.body.existingImages = JSON.parse(req.body.existingImages); } catch(_) {}
     }
     if (Array.isArray(req.body.existingImages)) {
-      updatedImages = req.body.existingImages;
+      const parsedExisting = req.body.existingImages
+        .map(mapImageInput)
+        .filter(Boolean);
+      if (parsedExisting.length > 0) {
+        updatedImages = parsedExisting;
+      } else if (req.body.existingImages.length === 0) {
+        updatedImages = [];
+      }
     }
     // Yeni görseller varsa ekle
     if (req.files && req.files.length > 0) {
@@ -427,8 +460,8 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
     }
     
     // Silinen görselleri bul ve uploads klasöründen sil
-    const oldImageUrls = oldImages.map(img => img.url).filter(Boolean);
-    const newImageUrls = updatedImages.map(img => img.url).filter(Boolean);
+    const oldImageUrls = extractUrls(oldImages);
+    const newImageUrls = extractUrls(updatedImages);
     const deletedImageUrls = oldImageUrls.filter(url => !newImageUrls.includes(url));
     
     if (deletedImageUrls.length > 0) {
@@ -487,61 +520,60 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
     }
 
     // Güncelleme: nested objeleri düzgün merge et
+    const location = propertyData.location || {};
     if (req.body.location) {
-      // coordinates alanını undefined/null veya 'undefined' (string) olarak set etmeyelim
-      if (
-        req.body.location.coordinates === undefined ||
-        req.body.location.coordinates === null ||
-        req.body.location.coordinates === 'undefined'
-      ) {
-        delete req.body.location.coordinates;
+      if (typeof req.body.location === 'string') {
+        try {
+          req.body.location = JSON.parse(req.body.location);
+        } catch(_) {
+          req.body.location = location;
+        }
       }
-      // Merge işlemi
-      property.location = { ...property.location, ...req.body.location };
-      // Merge sonrası da kontrol et - eğer coordinates geçersiz bir değerse kaldır
-      if (
-          (property.location.coordinates && typeof property.location.coordinates === 'string' && property.location.coordinates === 'undefined') ||
-          (property.location.coordinates && typeof property.location.coordinates !== 'object') ||
-          property.location.coordinates === undefined ||
-          property.location.coordinates === null ||
-          Array.isArray(property.location.coordinates)
-        ) {
-        delete property.location.coordinates;
+      Object.assign(location, req.body.location);
+      if (location.coordinates === undefined || location.coordinates === null || location.coordinates === 'undefined') {
+        delete location.coordinates;
       }
     }
+    
+    const pricing = propertyData.pricing || {};
     if (req.body.pricing) {
-      property.pricing = { ...property.pricing, ...req.body.pricing };
-    }
-    if (req.body.amenities !== undefined) {
-      property.amenities = Array.isArray(req.body.amenities) ? req.body.amenities : [];
-    }
-    if (req.body.rules !== undefined) {
-      property.rules = Array.isArray(req.body.rules) ? req.body.rules : [];
-    }
-
-    // Diğer alanları güncelle (images zaten yukarıda işlendi)
-    const fieldsToUpdate = ['title', 'description', 'propertyType', 'listingType', 'size', 'bedrooms', 'bathrooms'];
-    fieldsToUpdate.forEach(field => {
-      if (req.body[field] !== undefined) {
-        property[field] = req.body[field];
+      if (typeof req.body.pricing === 'string') {
+        try {
+          req.body.pricing = JSON.parse(req.body.pricing);
+        } catch(_) {
+          req.body.pricing = pricing;
+        }
       }
-    });
-
-    // Son kontrol: location.coordinates geçersiz ise boş obje yap (Mongoose validation hatası önleme)
-    if (property.location) {
-      if (property.location.coordinates === undefined || 
-          property.location.coordinates === null ||
-          (typeof property.location.coordinates !== 'object') ||
-          Array.isArray(property.location.coordinates)) {
-        property.location.coordinates = {};
-      } else if (property.location.coordinates && 
-                 (property.location.coordinates.lat === undefined && property.location.coordinates.lng === undefined)) {
-        // Eğer lat ve lng yoksa boş obje yap
-        property.location.coordinates = {};
-      }
+      Object.assign(pricing, req.body.pricing);
     }
+    
+    const amenities = req.body.amenities !== undefined ? (Array.isArray(req.body.amenities) ? req.body.amenities : []) : propertyData.amenities;
+    const rules = req.body.rules !== undefined ? (Array.isArray(req.body.rules) ? req.body.rules : []) : propertyData.rules;
 
-    await property.save();
+    // Sequelize formatına çevir
+    const updateData = {
+      title: req.body.title !== undefined ? req.body.title : propertyData.title,
+      description: req.body.description !== undefined ? req.body.description : propertyData.description,
+      locationCity: location.city || 'Antalya',
+      locationDistrict: location.district,
+      locationNeighborhood: location.neighborhood,
+      locationAddress: location.address,
+      locationCoordinates: location.coordinates,
+      propertyType: req.body.propertyType !== undefined ? req.body.propertyType : propertyData.propertyType,
+      listingType: req.body.listingType !== undefined ? req.body.listingType : propertyData.listingType,
+      size: req.body.size !== undefined ? Number(req.body.size) : propertyData.size,
+      bedrooms: req.body.bedrooms !== undefined ? Number(req.body.bedrooms) : propertyData.bedrooms,
+      bathrooms: req.body.bathrooms !== undefined ? Number(req.body.bathrooms) : propertyData.bathrooms,
+      amenities: amenities,
+      images: updatedImages,
+      pricingDaily: pricing.daily || 0,
+      pricingWeekly: pricing.weekly,
+      pricingMonthly: pricing.monthly,
+      seasonalRates: pricing.seasonalRates || [],
+      rules: rules
+    };
+
+    await property.update(updateData);
 
     res.json(property);
   } catch (error) {
@@ -559,19 +591,20 @@ router.put('/:id', auth, upload.array('images', 50), async (req, res) => {
 // Delete property
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    const property = await Property.findByPk(req.params.id);
     
     if (!property) {
       return res.status(404).json({ message: 'Daire bulunamadı' });
     }
 
-    if (property.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    const propertyData = property.toJSON();
+    if (propertyData.owner !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Yetkiniz yok' });
     }
 
     // Ilgili görselleri dosya sisteminden sil
     try {
-      const imgs = Array.isArray(property.images) ? property.images : [];
+      const imgs = Array.isArray(propertyData.images) ? propertyData.images : [];
       await Promise.all(imgs.map((img) => {
         const raw = (img?.url || '').replace(/\\/g, '/');
         if (!raw) return Promise.resolve();
@@ -589,7 +622,7 @@ router.delete('/:id', auth, async (req, res) => {
       console.warn('Görsel silme hatası:', error?.message || error);
     }
 
-    await property.deleteOne();
+    await property.destroy();
     res.json({ message: 'Daire silindi' });
   } catch (error) {
     console.error(error);

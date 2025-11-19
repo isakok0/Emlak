@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { FaPhone, FaEnvelope, FaCheck, FaTimes } from 'react-icons/fa';
+import { FaCheck, FaTimes } from 'react-icons/fa';
 import './BookingRequests.css';
 
 const BookingRequests = ({ onUpdate }) => {
@@ -165,7 +165,7 @@ const BookingRequests = ({ onUpdate }) => {
                 )}
               </div>
 
-              {selectedRequest.communicationLog && selectedRequest.communicationLog.length > 0 && (
+              {Array.isArray(selectedRequest.communicationLog) && selectedRequest.communicationLog.length > 0 && (
                 <div className="detail-section">
                   <h3>İletişim Geçmişi</h3>
                   {selectedRequest.communicationLog.map((log, index) => (

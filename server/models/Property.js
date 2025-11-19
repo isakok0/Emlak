@@ -1,114 +1,205 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const propertySchema = new mongoose.Schema({
+const Property = sequelize.define('Property', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   title: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     trim: true
   },
   description: {
-    type: String,
-    required: true
+    type: DataTypes.TEXT,
+    allowNull: false
   },
-  location: {
-    city: { type: String, default: 'Antalya', required: true },
-    district: { type: String },
-    neighborhood: { type: String },
-    address: { type: String },
-    // coordinates için forma bazen "undefined" veya hiç değer gelmeyebiliyor.
-    // Mongoose'un alt belge bekleyip "Cast to Object failed" hatası atmaması için
-    // Mixed tipine alıp default'u undefined bırakıyoruz.
-    coordinates: { type: mongoose.Schema.Types.Mixed, default: undefined }
+  locationCity: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'Antalya',
+    field: 'location_city'
+  },
+  locationDistrict: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'location_district'
+  },
+  locationNeighborhood: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'location_neighborhood'
+  },
+  locationAddress: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'location_address'
+  },
+  locationCoordinates: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    field: 'location_coordinates'
   },
   propertyType: {
-    type: String,
-    enum: ['1+0', '1+1', '2+1', '3+1', '4+1'],
-    required: true
+    type: DataTypes.ENUM('1+0', '1+1', '2+1', '3+1', '4+1'),
+    allowNull: false,
+    field: 'property_type'
   },
   listingType: {
-    type: String,
-    enum: ['rent', 'rent_daily', 'rent_monthly', 'sale'],
-    default: 'rent_daily',
-    index: true
+    type: DataTypes.ENUM('rent', 'rent_daily', 'rent_monthly', 'sale'),
+    defaultValue: 'rent_daily',
+    allowNull: false,
+    field: 'listing_type'
   },
-  isFeatured: { type: Boolean, default: false, index: true },
-  ownerVerified: { type: Boolean, default: false },
+  isFeatured: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'is_featured'
+  },
+  ownerVerified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
   size: {
-    type: Number,
-    required: true // metrekare
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
   bedrooms: {
-    type: Number,
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false
   },
   bathrooms: {
-    type: Number,
-    default: 1
+    type: DataTypes.INTEGER,
+    defaultValue: 1
   },
-  amenities: [{
-    type: String
-  }],
-  images: [{
-    url: { type: String, required: true },
-    caption: { type: String }
-  }],
+  amenities: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  },
+  images: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  },
   videoUrl: {
-    type: String
+    type: DataTypes.STRING,
+    allowNull: true
   },
-  pricing: {
-    daily: { type: Number, required: true },
-    weekly: { type: Number },
-    monthly: { type: Number },
-    seasonalRates: [{
-      startDate: { type: Date },
-      endDate: { type: Date },
-      multiplier: { type: Number, default: 1 } // normal fiyatın kaç katı
-    }]
+  pricingDaily: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    field: 'pricing_daily'
   },
-  availability: [{
-    date: { type: Date, required: true },
-    isAvailable: { type: Boolean, default: true },
-    bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
-    status: { 
-      type: String, 
-      enum: ['available', 'pending_request', 'confirmed'],
-      default: 'available'
+  pricingWeekly: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'pricing_weekly'
+  },
+  pricingMonthly: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'pricing_monthly'
+  },
+  seasonalRates: {
+    type: DataTypes.JSON,
+    defaultValue: [],
+    field: 'seasonal_rates'
+  },
+  availability: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  },
+  rules: {
+    type: DataTypes.JSON,
+    defaultValue: []
+  },
+  nearbyAttractions: {
+    type: DataTypes.JSON,
+    defaultValue: [],
+    field: 'nearby_attractions'
+  },
+  ownerId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'owner_id',
+    references: {
+      model: 'users',
+      key: 'id'
     }
-  }],
-  rules: [{
-    type: String
-  }],
-  nearbyAttractions: [{
-    name: { type: String },
-    distance: { type: String },
-    type: { type: String }
-  }],
-  owner: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
   },
   isActive: {
-    type: Boolean,
-    default: true
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
-  rating: {
-    average: { type: Number, default: 0 },
-    count: { type: Number, default: 0 }
+  ratingAverage: {
+    type: DataTypes.DECIMAL(3, 2),
+    defaultValue: 0,
+    field: 'rating_average'
   },
-  views: { type: Number, default: 0 },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  ratingCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'rating_count'
+  },
+  views: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
   }
+}, {
+  tableName: 'properties',
+  timestamps: true,
+  indexes: [
+    { fields: ['location_city', 'location_district'] },
+    { fields: ['property_type'] },
+    { fields: ['pricing_daily'] },
+    { fields: ['listing_type'] },
+    { fields: ['is_featured'] }
+  ]
 });
 
-// Indexes for search
-propertySchema.index({ 'location.city': 1, 'location.district': 1 });
-propertySchema.index({ propertyType: 1 });
-propertySchema.index({ 'pricing.daily': 1 });
-propertySchema.index({ listingType: 1 });
-propertySchema.index({ isFeatured: 1 });
+// Mongoose uyumluluğu için virtual fields ve toJSON
+Property.prototype.toJSON = function() {
+  const values = { ...this.get() };
+  values._id = values.id;
+  delete values.id;
+  
+  // Nested object yapısını oluştur
+  values.location = {
+    city: values.locationCity,
+    district: values.locationDistrict,
+    neighborhood: values.locationNeighborhood,
+    address: values.locationAddress,
+    coordinates: values.locationCoordinates
+  };
+  delete values.locationCity;
+  delete values.locationDistrict;
+  delete values.locationNeighborhood;
+  delete values.locationAddress;
+  delete values.locationCoordinates;
+  
+  values.pricing = {
+    daily: parseFloat(values.pricingDaily) || 0,
+    weekly: values.pricingWeekly ? parseFloat(values.pricingWeekly) : undefined,
+    monthly: values.pricingMonthly ? parseFloat(values.pricingMonthly) : undefined,
+    seasonalRates: values.seasonalRates || []
+  };
+  delete values.pricingDaily;
+  delete values.pricingWeekly;
+  delete values.pricingMonthly;
+  delete values.seasonalRates;
+  
+  values.rating = {
+    average: parseFloat(values.ratingAverage) || 0,
+    count: values.ratingCount || 0
+  };
+  delete values.ratingAverage;
+  delete values.ratingCount;
+  
+  values.owner = values.ownerId;
+  delete values.ownerId;
+  
+  return values;
+};
 
-module.exports = mongoose.model('Property', propertySchema);
-
+module.exports = Property;

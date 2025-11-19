@@ -28,6 +28,13 @@ const getSimilarPerView = (width) => {
   return 3;
 };
 
+const formatCurrency = (value, options = {}) => {
+  if (value === null || value === undefined || value === '') return '';
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numberValue)) return '';
+  return numberValue.toLocaleString('tr-TR', options);
+};
+
 const PropertyDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -241,7 +248,24 @@ const PropertyDetail = () => {
       if (u.startsWith('uploads')) return `${apiBase}/${u}`;
       return u;
     };
-    const urls = (p?.images?.map(img => encodeURI(toFull((img?.url||'').replace(/\\/g,'/')))).filter(Boolean) || []);
+    // images'ın array olduğundan emin ol (JSON string olarak gelebilir veya null olabilir)
+    const imagesArray = (() => {
+      if (!p?.images) return [];
+      if (Array.isArray(p.images)) return p.images;
+      if (typeof p.images === 'string') {
+        try {
+          const parsed = JSON.parse(p.images);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    })();
+    const urls = imagesArray.map(img => {
+      const url = typeof img === 'string' ? img : (img?.url || '');
+      return encodeURI(toFull(url.replace(/\\/g,'/')));
+    }).filter(Boolean);
     if (urls.length === 0) urls.push(placeholderImage);
     return urls;
   }
@@ -840,34 +864,52 @@ const PropertyDetail = () => {
                                   <strong>{sp.title}</strong>
                                   {(() => {
                                     if (sp.listingType === 'rent_monthly') {
-                                      const monthly = sp.pricing?.monthly || 0;
+                                      const monthlyValue = sp.pricing?.monthly ?? sp.pricing?.daily ?? '';
+                                      const monthlyFormatted = formatCurrency(monthlyValue);
                                       return (
                                         <div className="property-price">
-                                          <span className="price">₺{monthly}</span>
-                                          <span className="period">/ ay</span>
-                                        </div>
-                                      );
-                                    }
-                                    if (sp.listingType === 'sale') {
-                                      const salePrice = sp.pricing?.monthly || sp.pricing?.daily;
-                                      return (
-                                        <div className="property-price">
-                                          {salePrice ? (
-                                            <span className="price">₺{salePrice}</span>
+                                          {monthlyFormatted ? (
+                                            <>
+                                              <span className="price">₺{monthlyFormatted}</span>
+                                              <span className="period">/ ay</span>
+                                            </>
                                           ) : (
                                             <span className="period">Fiyat Sorunuz</span>
                                           )}
                                         </div>
                                       );
                                     }
-                                    const daily = sp.pricing?.daily || 0;
-                                    const weekly = daily ? daily * 7 : 0;
+                                    if (sp.listingType === 'sale') {
+                                      const saleValue = sp.pricing?.sale ?? sp.pricing?.monthly ?? sp.pricing?.daily ?? '';
+                                      const saleFormatted = formatCurrency(saleValue);
+                                      return (
+                                        <div className="property-price">
+                                          {saleFormatted ? (
+                                            <span className="price">₺{saleFormatted}</span>
+                                          ) : (
+                                            <span className="period">Fiyat Sorunuz</span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    const dailyValueRaw = sp.pricing?.daily ?? '';
+                                    const numericDaily = Number(dailyValueRaw);
+                                    const dailyValue = Number.isFinite(numericDaily) ? numericDaily : '';
+                                    const weeklyValue = numericDaily > 0 ? numericDaily * 7 : '';
+                                    const dailyFormatted = formatCurrency(dailyValue);
+                                    const weeklyFormatted = numericDaily > 0 ? formatCurrency(weeklyValue) : '';
                                     return (
                                       <div className="property-price">
-                                        <span className="price">₺{daily}</span>
-                                        <span className="period">/ gece</span>
-                                        {weekly ? (
-                                          <span className="weekly-price">Haftalık: ₺{weekly}</span>
+                                        {dailyFormatted ? (
+                                          <>
+                                            <span className="price">₺{dailyFormatted}</span>
+                                            <span className="period">/ gece</span>
+                                          </>
+                                        ) : (
+                                          <span className="period">Fiyat Sorunuz</span>
+                                        )}
+                                        {weeklyFormatted && numericDaily > 0 ? (
+                                          <span className="weekly-price">Haftalık: ₺{weeklyFormatted}</span>
                                         ) : null}
                                       </div>
                                     );
@@ -928,23 +970,39 @@ const PropertyDetail = () => {
           <div className="property-sidebar" id="bookingSection">
             <div className="booking-card">
               <div className="price-display">
-                {
-                  property.listingType === 'rent_monthly' ? (
+                {(() => {
+                  if (property.listingType === 'rent_monthly') {
+                    const monthlyValue = property.pricing?.monthly ?? property.pricing?.daily ?? '';
+                    const monthlyFormatted = formatCurrency(monthlyValue);
+                    return monthlyFormatted ? (
+                      <>
+                        <span className="daily-price">₺{monthlyFormatted}</span>
+                        <span className="price-period">/ ay</span>
+                      </>
+                    ) : (
+                      <span className="daily-price">Fiyat Sorunuz</span>
+                    );
+                  }
+                  if (property.listingType === 'sale') {
+                    const saleValue = property.pricing?.sale ?? property.pricing?.monthly ?? property.pricing?.daily ?? '';
+                    const saleFormatted = formatCurrency(saleValue);
+                    return (
+                      <span className="daily-price">
+                        {saleFormatted ? `₺${saleFormatted}` : 'Fiyat Sorunuz'}
+                      </span>
+                    );
+                  }
+                  const dailyValue = property.pricing?.daily ?? '';
+                  const dailyFormatted = formatCurrency(dailyValue);
+                  return dailyFormatted ? (
                     <>
-                      <span className="daily-price">₺{property.pricing?.monthly ?? property.pricing?.daily ?? 0}</span>
-                      <span className="price-period">/ ay</span>
-                    </>
-                  ) : property.listingType === 'sale' ? (
-                    <>
-                      <span className="daily-price">{(property.pricing?.monthly || property.pricing?.daily) ? `₺${property.pricing?.monthly || property.pricing?.daily}` : 'Fiyat Sorunuz'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="daily-price">₺{property.pricing?.daily ?? 0}</span>
+                      <span className="daily-price">₺{dailyFormatted}</span>
                       <span className="price-period">/ gece</span>
                     </>
-                  )
-                }
+                  ) : (
+                    <span className="daily-price">Fiyat Sorunuz</span>
+                  );
+                })()}
               </div>
 
               <div className="booking-form">
@@ -1040,24 +1098,32 @@ const PropertyDetail = () => {
 
                 {/* İletişim bilgileri Checkout sayfasında alınacak */}
 
-                {priceSummary && (
-                  <div className="price-summary">
-                    <div className="price-row">
-                      <span>₺{priceSummary.dailyRate} x {priceSummary.totalDays} gece</span>
-                      <span>₺{(priceSummary.dailyRate * priceSummary.totalDays).toFixed(2)}</span>
-                    </div>
-                    {(priceSummary.extraPerDay > 0) && (
+                {priceSummary && (() => {
+                  const nightlyTotal = priceSummary.dailyRate * priceSummary.totalDays;
+                  const extraTotal = priceSummary.extraPerDay * priceSummary.totalDays;
+                  const totalFormatted = formatCurrency(priceSummary.total, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0,00';
+                  const nightlyTotalFormatted = formatCurrency(nightlyTotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0,00';
+                  const extraTotalFormatted = formatCurrency(extraTotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0,00';
+                  const dailyRateFormatted = formatCurrency(priceSummary.dailyRate, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0,00';
+                  return (
+                    <div className="price-summary">
                       <div className="price-row">
-                        <span>Ekstra Kişi Ücreti ({priceSummary.extraAdults} yetişkin{priceSummary.extraChildren>0?`, ${priceSummary.extraChildren} çocuk`:''})</span>
-                        <span>₺{(priceSummary.extraPerDay * priceSummary.totalDays).toFixed(2)}</span>
+                        <span>₺{dailyRateFormatted} x {priceSummary.totalDays} gece</span>
+                        <span>₺{nightlyTotalFormatted}</span>
                       </div>
-                    )}
-                    <div className="price-row total">
-                      <span>Toplam</span>
-                      <span>₺{priceSummary.total.toFixed(2)}</span>
+                      {(priceSummary.extraPerDay > 0) && (
+                        <div className="price-row">
+                          <span>Ekstra Kişi Ücreti ({priceSummary.extraAdults} yetişkin{priceSummary.extraChildren>0?`, ${priceSummary.extraChildren} çocuk`:''})</span>
+                          <span>₺{extraTotalFormatted}</span>
+                        </div>
+                      )}
+                      <div className="price-row total">
+                        <span>Toplam</span>
+                        <span>₺{totalFormatted}</span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <button
                   onClick={handleRequestBooking}

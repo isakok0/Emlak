@@ -492,7 +492,9 @@ const Home = () => {
                 {visible.map((r, idx) => (
                   <div className="review-card" key={idx}>
                     <div className="review-header">
-                      <div className="review-user-only">{r?.user?.name || 'Misafir'}</div>
+                      <div className="review-user-only">
+                        {r?.user?.name || r?.userName || r?.guestName || 'Misafir'}
+                      </div>
                     </div>
                     <div className="comment">{r?.comment || 'Yorum yok'}</div>
                   </div>
@@ -507,7 +509,7 @@ const Home = () => {
               if (window.matchMedia('(max-width: 900px)').matches) return 2;
               return 3;
             };
-            const step = Math.max(1, Math.min(computePerView(), reviews.length || 1));
+            const step = 1;
             return (
             <>
               <button className="reviews-nav prev" onClick={()=> setReviewsIndex(i=> i-step)} aria-label="Önceki">‹</button>

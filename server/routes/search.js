@@ -1,15 +1,19 @@
 const express = require('express');
 const Property = require('../models/Property');
+const User = require('../models/User');
 const moment = require('moment');
+const { Op } = require('sequelize');
 
 const router = express.Router();
 
 const getBaseFilter = ({ propertyType, amenityList, minRating }) => {
-  const baseFilter = { isActive: true, 'location.city': 'Antalya' };
+  const baseFilter = { 
+    isActive: true, 
+    locationCity: 'Antalya' 
+  };
 
   if (propertyType) baseFilter.propertyType = propertyType;
-  if (amenityList?.length) baseFilter.amenities = { $all: amenityList };
-  if (minRating !== undefined) baseFilter['rating.average'] = { $gte: minRating };
+  if (minRating !== undefined) baseFilter.ratingAverage = { [Op.gte]: minRating };
 
   return baseFilter;
 };
@@ -42,40 +46,24 @@ const parseNumber = value => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const effectivePriceExpr = {
-  $switch: {
-    branches: [
-      { case: { $eq: ['$listingType', 'rent_monthly'] }, then: { $ifNull: ['$pricing.monthly', 0] } },
-      { case: { $eq: ['$listingType', 'sale'] }, then: { $ifNull: ['$pricing.daily', 0] } },
-      { case: { $eq: ['$listingType', 'rent'] }, then: { $ifNull: ['$pricing.daily', 0] } }
-    ],
-    default: { $ifNull: ['$pricing.daily', 0] }
+// Fiyat filtreleme için helper fonksiyon
+const applyPriceFilter = (whereClause, { min, max }, listingType) => {
+  // Listing type'a göre fiyat alanını belirle
+  let priceField = 'pricingDaily';
+  if (listingType === 'rent_monthly') {
+    priceField = 'pricingMonthly';
+  } else if (listingType === 'sale') {
+    priceField = 'pricingDaily';
   }
-};
-
-const buildPriceExpr = ({ min, max, exclusiveMin = false, exclusiveMax = false }) => {
-  const clauses = [];
-  if (min !== undefined) {
-    const op = exclusiveMin ? '$gt' : '$gte';
-    clauses.push({ [op]: [effectivePriceExpr, min] });
+  
+  if (min !== undefined || max !== undefined) {
+    const priceFilter = {};
+    if (min !== undefined) priceFilter[Op.gte] = min;
+    if (max !== undefined) priceFilter[Op.lte] = max;
+    whereClause[priceField] = priceFilter;
   }
-  if (max !== undefined) {
-    const op = exclusiveMax ? '$lt' : '$lte';
-    clauses.push({ [op]: [effectivePriceExpr, max] });
-  }
-  if (!clauses.length) return null;
-  return clauses.length === 1 ? clauses[0] : { $and: clauses };
-};
-
-const applyPriceExpr = (filter, options = {}) => {
-  const expr = buildPriceExpr(options);
-  if (!expr) return filter;
-  if (filter.$expr) {
-    filter.$expr = { $and: [filter.$expr, expr] };
-  } else {
-    filter.$expr = expr;
-  }
-  return filter;
+  
+  return whereClause;
 };
 
 // Advanced search
@@ -103,11 +91,27 @@ router.get('/', async (req, res) => {
       : null;
 
     const baseFilter = getBaseFilter({ propertyType, amenityList, minRating: minRatingValue });
-    const filter = applyPriceExpr({ ...baseFilter }, { min: minPriceValue, max: maxPriceValue });
+    
+    // Amenities filtresi için JSON içinde arama
+    if (amenityList?.length) {
+      // MySQL JSON içinde arama için Sequelize.literal kullan
+      const { sequelize } = require('../config/database');
+      baseFilter[Op.and] = amenityList.map(amenity => 
+        sequelize.literal(`JSON_CONTAINS(amenities, '"${amenity}"')`)
+      );
+    }
+    
+    applyPriceFilter(baseFilter, { min: minPriceValue, max: maxPriceValue }, listingType);
 
-    let properties = await Property.find(filter)
-      .populate('owner', 'name email phone');
+    let properties = await Property.findAll({
+      where: baseFilter,
+      include: [
+        { model: User, as: 'owner', attributes: ['name', 'email', 'phone'] }
+      ]
+    });
 
+    // Sequelize sonuçlarını JSON'a çevir
+    properties = properties.map(p => p.toJSON());
     properties = filterByAvailability({ properties, checkIn, checkOut });
 
     let suggestions = null;
@@ -137,31 +141,38 @@ router.get('/', async (req, res) => {
         nearBudgetLimit: 6
       };
 
-      const cheaperQuery = relaxedMin !== undefined
-        ? buildFlexFilter({ min: relaxedMin, max: budget })
-        : buildFlexFilter({ max: budget });
+      const cheaperFilter = getBaseFilter({ propertyType, amenityList, minRating: minRatingValue });
+      applyPriceFilter(cheaperFilter, { 
+        min: relaxedMin, 
+        max: budget 
+      }, listingType);
 
       const aboveMin = minPriceValue !== undefined ? Math.max(minPriceValue, budget) : budget;
-      const aboveExclusiveMin = minPriceValue === undefined || aboveMin === budget;
-
-      const slightlyAboveQuery = buildFlexFilter({
+      const slightlyAboveFilter = getBaseFilter({ propertyType, amenityList, minRating: minRatingValue });
+      applyPriceFilter(slightlyAboveFilter, {
         min: aboveMin,
-        max: budget * 1.2,
-        exclusiveMin: aboveExclusiveMin
+        max: budget * 1.2
+      }, listingType);
+
+      const nearBudgetCheaper = await Property.findAll({
+        where: cheaperFilter,
+        include: [{ model: User, as: 'owner', attributes: ['name', 'email', 'phone'] }],
+        order: [['pricingDaily', 'DESC']],
+        limit: suggestionLimits.nearBudgetLimit
       });
 
-      const nearBudgetCheaper = await Property.find(cheaperQuery)
-        .sort({ 'pricing.daily': -1 })
-        .limit(suggestionLimits.nearBudgetLimit)
-        .populate('owner', 'name email phone');
-
-      const nearBudgetAbove = await Property.find(slightlyAboveQuery)
-        .sort({ 'pricing.daily': 1 })
-        .limit(suggestionLimits.nearBudgetLimit)
-        .populate('owner', 'name email phone');
+      const nearBudgetAbove = await Property.findAll({
+        where: slightlyAboveFilter,
+        include: [{ model: User, as: 'owner', attributes: ['name', 'email', 'phone'] }],
+        order: [['pricingDaily', 'ASC']],
+        limit: suggestionLimits.nearBudgetLimit
+      });
+      
+      const cheaperData = nearBudgetCheaper.map(p => p.toJSON());
+      const aboveData = nearBudgetAbove.map(p => p.toJSON());
 
       const nearBudgetCombined = filterByAvailability({
-        properties: [...nearBudgetCheaper, ...nearBudgetAbove],
+        properties: [...cheaperData, ...aboveData],
         checkIn,
         checkOut
       }).slice(0, suggestionLimits.nearBudgetLimit);

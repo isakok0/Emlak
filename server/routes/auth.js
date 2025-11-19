@@ -22,20 +22,19 @@ router.post('/register', [
     const { name, email, password, phone } = req.body;
 
     // Kullanıcı var mı kontrol et
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ where: { email } });
     if (user) {
       return res.status(400).json({ message: 'Bu e-posta ile kayıtlı kullanıcı zaten var' });
     }
 
-    user = new User({ name, email, password, phone });
-    await user.save();
+    user = await User.create({ name, email, password, phone });
 
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
 
     res.status(201).json({
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -61,7 +60,7 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ message: 'Geçersiz e-posta veya şifre' });
     }
@@ -71,12 +70,12 @@ router.post('/login', [
       return res.status(401).json({ message: 'Geçersiz e-posta veya şifre' });
     }
 
-    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
 
     res.json({
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -84,8 +83,12 @@ router.post('/login', [
       }
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Login error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -93,7 +96,7 @@ router.post('/login', [
 router.get('/me', auth, async (req, res) => {
   res.json({
     user: {
-      id: req.user._id,
+      id: req.user.id,
       name: req.user.name,
       email: req.user.email,
       phone: req.user.phone,

@@ -18,8 +18,7 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const msg = new ContactMessage(req.body);
-    await msg.save();
+    const msg = await ContactMessage.create(req.body);
     res.status(201).json({ message: 'Mesajınız alınmıştır' });
   } catch (error) {
     console.error(error);

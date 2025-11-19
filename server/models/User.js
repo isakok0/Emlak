@@ -1,4 +1,5 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 const bcrypt = require('bcryptjs');
 
 const DEFAULT_SALT_ROUNDS = 12;
@@ -14,95 +15,77 @@ async function hashPassword(rawPassword) {
   return bcrypt.hash(rawPassword, saltRounds);
 }
 
-const userSchema = new mongoose.Schema({
+const User = sequelize.define('User', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     trim: true
   },
   email: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
     lowercase: true,
     trim: true
   },
   password: {
-    type: String,
-    required: true,
-    minlength: 6
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      len: [6, Infinity]
+    }
   },
   phone: {
-    type: String,
+    type: DataTypes.STRING,
+    allowNull: true,
     trim: true
   },
   role: {
-    type: String,
-    enum: ['user', 'admin'],
-    default: 'user'
+    type: DataTypes.ENUM('user', 'admin'),
+    defaultValue: 'user'
   },
   superAdmin: {
-    type: Boolean,
-    default: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  }
+}, {
+  tableName: 'users',
+  timestamps: true,
+  hooks: {
+    beforeCreate: async (user) => {
+      if (user.password) {
+        user.password = await hashPassword(user.password);
+      }
+    },
+    beforeUpdate: async (user) => {
+      if (user.changed('password')) {
+        user.password = await hashPassword(user.password);
+      }
+    }
   }
 });
 
-// Şifre hashleme
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await hashPassword(this.password);
-  next();
-});
-
-// findOneAndUpdate ile şifre güncelleme durumunda hashleme
-userSchema.pre('findOneAndUpdate', async function(next) {
-  const update = this.getUpdate() || {};
-  const directPassword = update.password;
-  const setPassword = update.$set?.password;
-
-  if (!directPassword && !setPassword) {
-    return next();
-  }
-
-  const hashed = await hashPassword(directPassword || setPassword);
-
-  if (directPassword) {
-    update.password = hashed;
-  }
-
-  if (setPassword) {
-    update.$set.password = hashed;
-  }
-
-  this.setUpdate(update);
-  next();
-});
-
-// Şifre karşılaştırma
-userSchema.methods.comparePassword = async function(candidatePassword) {
+// Şifre karşılaştırma metodu
+User.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.methods.setPassword = async function(newPassword) {
+// Şifre setleme metodu
+User.prototype.setPassword = async function(newPassword) {
   this.password = await hashPassword(newPassword);
 };
 
-module.exports = mongoose.model('User', userSchema);
+// Mongoose uyumluluğu için _id getter
+User.prototype.toJSON = function() {
+  const values = { ...this.get() };
+  values._id = values.id;
+  delete values.id;
+  return values;
+};
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+module.exports = User;

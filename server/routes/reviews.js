@@ -1,7 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { Op } = require('sequelize');
 const Review = require('../models/Review');
 const Booking = require('../models/Booking');
+const Property = require('../models/Property');
+const User = require('../models/User');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -10,16 +13,23 @@ const router = express.Router();
 router.get('/latest', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 5, 20);
-    const reviews = await Review.find({})
-      .populate('user', 'name')
-      .populate('property', 'title images listingType location')
-      .sort({ createdAt: -1 })
-      .limit(limit);
+    const reviews = await Review.findAll({
+      include: [
+        { model: User, as: 'user', attributes: ['name'] },
+        { model: Property, as: 'property', attributes: ['title', 'images', 'listingType', 'locationCity', 'locationDistrict', 'id'] }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: limit
+    });
 
     res.json(reviews);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Reviews latest error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -38,12 +48,12 @@ router.post('/', auth, [
     const { property, booking, rating, comment } = req.body;
 
     // Booking kontrolü - sadece konaklamış kişiler yorum yapabilir
-    const bookingDoc = await Booking.findById(booking);
+    const bookingDoc = await Booking.findByPk(booking);
     if (!bookingDoc) {
       return res.status(404).json({ message: 'Rezervasyon bulunamadı' });
     }
 
-    if (bookingDoc.guest.toString() !== req.user._id.toString()) {
+    if (bookingDoc.guestId !== req.user.id) {
       return res.status(403).json({ message: 'Bu rezervasyon size ait değil' });
     }
 
@@ -52,22 +62,27 @@ router.post('/', auth, [
     }
 
     // Daha önce yorum yapılmış mı kontrol et
-    const existingReview = await Review.findOne({ booking });
+    const existingReview = await Review.findOne({ where: { bookingId: booking } });
     if (existingReview) {
       return res.status(400).json({ message: 'Bu rezervasyon için zaten yorum yaptınız' });
     }
 
-    const review = new Review({
-      property,
-      booking,
-      user: req.user._id,
-      rating,
+    const review = await Review.create({
+      propertyId: property,
+      bookingId: booking,
+      userId: req.user.id,
+      ratingOverall: rating.overall,
+      ratingCleanliness: rating.cleanliness,
+      ratingLocation: rating.location,
+      ratingValue: rating.value,
+      ratingCommunication: rating.communication,
       comment,
       isVerified: true
     });
-
-    await review.save();
-    await review.populate('user', 'name');
+    
+    await review.reload({
+      include: [{ model: User, as: 'user', attributes: ['name'] }]
+    });
 
     res.status(201).json(review);
   } catch (error) {
@@ -79,9 +94,11 @@ router.post('/', auth, [
 // Get reviews for a property
 router.get('/property/:propertyId', async (req, res) => {
   try {
-    const reviews = await Review.find({ property: req.params.propertyId })
-      .populate('user', 'name')
-      .sort({ createdAt: -1 });
+    const reviews = await Review.findAll({
+      where: { propertyId: req.params.propertyId },
+      include: [{ model: User, as: 'user', attributes: ['name'] }],
+      order: [['createdAt', 'DESC']]
+    });
 
     res.json(reviews);
   } catch (error) {
@@ -93,9 +110,11 @@ router.get('/property/:propertyId', async (req, res) => {
 // Get user's reviews
 router.get('/my-reviews', auth, async (req, res) => {
   try {
-    const reviews = await Review.find({ user: req.user._id })
-      .populate('property', 'title images location')
-      .sort({ createdAt: -1 });
+    const reviews = await Review.findAll({
+      where: { userId: req.user.id },
+      include: [{ model: Property, as: 'property', attributes: ['title', 'images', 'locationCity', 'locationDistrict'] }],
+      order: [['createdAt', 'DESC']]
+    });
 
     res.json(reviews);
   } catch (error) {
@@ -114,10 +133,7 @@ router.post('/guest', async (req, res) => {
     }
 
     // İlk aktif daireyi bul (veya varsayılan olarak kullan)
-    const Property = require('../models/Property');
-    const User = require('../models/User');
-    
-    let property = await Property.findOne({ isActive: true });
+    let property = await Property.findOne({ where: { isActive: true } });
     if (!property) {
       // Eğer daire yoksa, ilk daireyi oluştur veya hata ver
       return res.status(400).json({ message: 'Henüz daire bulunmuyor. Lütfen önce daire ekleyin.' });
@@ -125,44 +141,92 @@ router.post('/guest', async (req, res) => {
 
     // Kullanıcıyı bul veya oluştur (geçici email ile)
     const tempEmail = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}@temp.com`;
-    let user = await User.findOne({ name: name, email: { $regex: /^guest_.*@temp\.com$/ } });
+    let user = await User.findOne({ 
+      where: { 
+        name: name, 
+        email: { [Op.like]: 'guest_%@temp.com' }
+      } 
+    });
     if (!user) {
       // Geçici kullanıcı oluştur
-      user = new User({
+      user = await User.create({
         name: name,
         email: tempEmail, // Geçici email
         password: 'temp123', // Geçici şifre
         role: 'user'
       });
-      await user.save();
     }
 
-    // Sahte booking ID
-    const mongoose = require('mongoose');
-    const fakeBookingId = new mongoose.Types.ObjectId();
+    // Guest yorumları için dummy booking bul veya oluştur
+    // Bu booking tüm guest yorumları için kullanılacak
+    // Admin notes alanında özel bir işaret kullanarak buluyoruz
+    let dummyBooking = await Booking.findOne({ 
+      where: { 
+        requestType: 'manual',
+        status: 'completed',
+        adminNotes: { [Op.like]: '%GUEST_REVIEW_DUMMY%' }
+      }
+    });
 
-    const review = new Review({
-      property: property._id,
-      booking: fakeBookingId,
-      user: user._id,
-      rating: {
-        overall: rating || 5,
-        cleanliness: rating || 5,
-        location: rating || 5,
-        value: rating || 5,
-        communication: rating || 5
-      },
+    if (!dummyBooking) {
+      // Dummy booking oluştur
+      const pastDate = new Date();
+      pastDate.setFullYear(pastDate.getFullYear() - 1);
+      const futureDate = new Date(pastDate);
+      futureDate.setDate(futureDate.getDate() + 1);
+
+      dummyBooking = await Booking.create({
+        propertyId: property.id,
+        guestId: user.id,
+        checkIn: pastDate,
+        checkOut: futureDate,
+        guestsAdults: 1,
+        guestsChildren: 0,
+        pricingDailyRate: 0,
+        pricingTotalDays: 1,
+        pricingSubtotal: 0,
+        pricingServiceFee: 0,
+        pricingTax: 0,
+        pricingTotal: 0,
+        paymentMethod: 'cash',
+        paymentStatus: 'completed',
+        status: 'completed',
+        requestType: 'manual',
+        guestInfo: JSON.stringify({ 
+          name: 'Guest Review',
+          email: 'guest@review.com',
+          phone: '0000000000'
+        }),
+        adminNotes: 'GUEST_REVIEW_DUMMY - Bu rezervasyon misafir yorumları için kullanılmaktadır.',
+        policiesAccepted: true,
+        policiesAcceptedAt: new Date()
+      });
+    }
+
+    const review = await Review.create({
+      propertyId: property.id,
+      bookingId: dummyBooking.id,
+      userId: user.id,
+      ratingOverall: rating || 5,
+      ratingCleanliness: rating || 5,
+      ratingLocation: rating || 5,
+      ratingValue: rating || 5,
+      ratingCommunication: rating || 5,
       comment: comment,
       isVerified: false // Misafir yorumu
     });
-
-    await review.save();
-    await review.populate('user', 'name');
-    await review.populate('property', 'title');
+    
+    await review.reload({
+      include: [
+        { model: User, as: 'user', attributes: ['name'] },
+        { model: Property, as: 'property', attributes: ['title'] }
+      ]
+    });
 
     res.status(201).json(review);
   } catch (error) {
     console.error('[Guest Review] Hata:', error);
+    console.error('[Guest Review] Hata detayı:', error.stack);
     res.status(500).json({ message: 'Sunucu hatası', error: error.message });
   }
 });

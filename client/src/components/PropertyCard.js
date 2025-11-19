@@ -12,7 +12,21 @@ const formatCurrency = (value) => {
 
 const PropertyCard = ({ property }) => {
   const [hoverIndex, setHoverIndex] = useState(0);
-  const hasImages = property.images && property.images.length > 0;
+  // images'ın array olduğundan emin ol (JSON string olarak gelebilir veya null olabilir)
+  const imagesArray = (() => {
+    if (!property.images) return [];
+    if (Array.isArray(property.images)) return property.images;
+    if (typeof property.images === 'string') {
+      try {
+        const parsed = JSON.parse(property.images);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  })();
+  const hasImages = imagesArray.length > 0;
   const placeholder = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="100%" height="100%" fill="%23e5e7eb"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%239ca3af" font-size="20" font-family="Arial, Helvetica, sans-serif">Görsel Yok</text></svg>';
   const apiBase = (process.env.REACT_APP_API_URL || 'http://localhost:5000');
   const toFull = (u) => {
@@ -24,7 +38,7 @@ const PropertyCard = ({ property }) => {
     return u;
   };
   const imageUrls = (() => {
-    const urls = hasImages ? property.images.map(img => img?.url).filter(Boolean) : [];
+    const urls = hasImages ? imagesArray.map(img => (typeof img === 'string' ? img : img?.url)).filter(Boolean) : [];
     const fulls = urls.map(u => encodeURI(toFull(u)));
     return fulls.length > 0 ? fulls : [placeholder];
   })();

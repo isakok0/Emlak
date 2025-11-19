@@ -215,7 +215,11 @@ const [contactForm, setContactForm] = useState({
   const propertyBookingsMap = useMemo(() => {
     const map = {};
     (calendar.bookings || []).forEach((booking) => {
-      const propertyId = booking?.property?._id || booking?.property;
+      const propertyId =
+        booking?.property?._id ||
+        booking?.property?.id ||
+        booking?.propertyId ||
+        booking?.property;
       if (!propertyId) return;
       if (!map[propertyId]) map[propertyId] = [];
       map[propertyId].push(booking);
@@ -1824,6 +1828,50 @@ const AdminProperties = () => {
   const [images, setImages] = useState([]); // yeni eklenecek dosyalar
   const [existingImages, setExistingImages] = useState([]); // mevcut görseller
 
+  const normalizeImageList = (value) => {
+    if (!value) return [];
+    const toImageObject = (item) => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        try {
+          const parsed = JSON.parse(item);
+          if (parsed && typeof parsed === 'object') {
+            return toImageObject(parsed);
+          }
+        } catch (_) {
+          return { url: item, caption: '' };
+        }
+      }
+      if (typeof item === 'object') {
+        if (Array.isArray(item)) {
+          return null;
+        }
+        const url = item.url || item.path || item.src || '';
+        if (!url) return null;
+        return { url, caption: item.caption || item.name || '' };
+      }
+      return null;
+    };
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return normalizeImageList(parsed);
+      } catch (_) {
+        return value ? [{ url: value, caption: '' }] : [];
+      }
+    }
+    if (Array.isArray(value)) {
+      return value
+        .map(toImageObject)
+        .filter(Boolean);
+    }
+    if (typeof value === 'object') {
+      const single = toImageObject(value);
+      return single ? [single] : [];
+    }
+    return [];
+  };
+
   useEffect(()=>{ fetchItems(); },[]);
 
   const formatPriceInputValue = (value) => {
@@ -1920,7 +1968,7 @@ const AdminProperties = () => {
       rules: Array.isArray(p.rules)? p.rules : []
     });
     setImages([]);
-    setExistingImages(Array.isArray(p.images) ? p.images : []);
+    setExistingImages(normalizeImageList(p.images));
     setShowModal(true);
   };
 

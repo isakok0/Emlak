@@ -9,16 +9,22 @@ Write-Host ""
 if (-not (Test-Path ".env")) {
     Write-Host ".env dosyası bulunamadı, oluşturuluyor..." -ForegroundColor Yellow
     @"
-# MongoDB Connection
-MONGODB_URI=mongodb://localhost:27017/gunluk-kiralik-evim
-
-# Server Port
+# Server Configuration
 PORT=5000
+NODE_ENV=development
+
+# MySQL Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=gunluk_kiralik_evim
+DB_USER=root
+DB_PASSWORD=
 
 # JWT Secret (üretim ortamında güçlü bir değer kullanın)
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_SECRET=test-jwt-secret-key-for-development
 "@ | Out-File -FilePath .env -Encoding utf8
-    Write-Host ".env dosyası oluşturuldu." -ForegroundColor Green
+    Write-Host ".env dosyası oluşturuldu (MySQL yapılandırması)." -ForegroundColor Green
+    Write-Host "NOT: MySQL veritabanınızın çalıştığından ve 'gunluk_kiralik_evim' veritabanının oluşturulduğundan emin olun!" -ForegroundColor Yellow
 }
 
 # Server bağımlılıkları kontrolü
@@ -52,7 +58,7 @@ Write-Host ""
 Write-Host "Server: http://localhost:5000" -ForegroundColor Yellow
 Write-Host "Client: http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "NOT: MongoDB'nin çalıştığından emin olun!" -ForegroundColor Red
+Write-Host "NOT: MySQL'in çalıştığından ve 'gunluk_kiralik_evim' veritabanının oluşturulduğundan emin olun!" -ForegroundColor Yellow
 Write-Host ""
 
 # Server'ı arka planda başlat

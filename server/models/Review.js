@@ -1,66 +1,134 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/database');
 
-const reviewSchema = new mongoose.Schema({
-  property: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Property',
-    required: true
+const Review = sequelize.define('Review', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
   },
-  booking: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Booking',
-    required: true
+  propertyId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'property_id',
+    references: {
+      model: 'properties',
+      key: 'id'
+    }
   },
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+  bookingId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'booking_id',
+    references: {
+      model: 'bookings',
+      key: 'id'
+    }
   },
-  rating: {
-    overall: { type: Number, required: true, min: 1, max: 5 },
-    cleanliness: { type: Number, min: 1, max: 5 },
-    location: { type: Number, min: 1, max: 5 },
-    value: { type: Number, min: 1, max: 5 },
-    communication: { type: Number, min: 1, max: 5 }
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'user_id',
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  ratingOverall: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: { min: 1, max: 5 },
+    field: 'rating_overall'
+  },
+  ratingCleanliness: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 5 },
+    field: 'rating_cleanliness'
+  },
+  ratingLocation: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 5 },
+    field: 'rating_location'
+  },
+  ratingValue: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 5 },
+    field: 'rating_value'
+  },
+  ratingCommunication: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1, max: 5 },
+    field: 'rating_communication'
   },
   comment: {
-    type: String,
+    type: DataTypes.TEXT,
+    allowNull: true,
     trim: true
   },
   isVerified: {
-    type: Boolean,
-    default: true // Sadece konaklamış kişiler yorum yapabilir
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  }
+}, {
+  tableName: 'reviews',
+  timestamps: true,
+  hooks: {
+    afterSave: async (review) => {
+      // Property rating'i güncelle
+      const Property = require('./Property');
+      const reviews = await Review.findAll({ where: { propertyId: review.propertyId } });
+      const avgRating = reviews.reduce((sum, r) => sum + r.ratingOverall, 0) / reviews.length;
+      
+      await Property.update(
+        {
+          ratingAverage: avgRating,
+          ratingCount: reviews.length
+        },
+        { where: { id: review.propertyId } }
+      );
+    }
   }
 });
 
-// Property rating'i güncelle
-reviewSchema.post('save', async function() {
-  const Property = mongoose.model('Property');
-  const reviews = await mongoose.model('Review').find({ property: this.property });
-  const avgRating = reviews.reduce((sum, r) => sum + r.rating.overall, 0) / reviews.length;
+// Mongoose uyumluluğu için toJSON
+Review.prototype.toJSON = function() {
+  const values = { ...this.get() };
+  values._id = values.id;
+  delete values.id;
   
-  await Property.findByIdAndUpdate(this.property, {
-    'rating.average': avgRating,
-    'rating.count': reviews.length
-  });
-});
+  if (!values.property && values.propertyId) {
+    values.property = values.propertyId;
+  }
+  delete values.propertyId;
+  
+  if (!values.booking && values.bookingId) {
+    values.booking = values.bookingId;
+  }
+  delete values.bookingId;
+  
+  if (!values.user && values.userId) {
+    values.user = values.userId;
+  }
+  delete values.userId;
+  
+  values.rating = {
+    overall: values.ratingOverall,
+    cleanliness: values.ratingCleanliness,
+    location: values.ratingLocation,
+    value: values.ratingValue,
+    communication: values.ratingCommunication
+  };
+  delete values.ratingOverall;
+  delete values.ratingCleanliness;
+  delete values.ratingLocation;
+  delete values.ratingValue;
+  delete values.ratingCommunication;
+  
+  return values;
+};
 
-module.exports = mongoose.model('Review', reviewSchema);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+module.exports = Review;

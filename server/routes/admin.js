@@ -1,7 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { auth, admin, superAdmin } = require('../middleware/auth');
-const mongoose = require('mongoose');
+const { Op, Sequelize } = require('sequelize');
+const sequelize = require('../config/database');
 const User = require('../models/User');
 const Property = require('../models/Property');
 const Booking = require('../models/Booking');
@@ -38,20 +39,31 @@ router.use(admin);
 // Dashboard stats
 router.get('/dashboard', async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const totalProperties = await Property.countDocuments();
-    const totalBookings = await Booking.countDocuments();
-    const pendingRequests = await Booking.countDocuments({ status: 'pending_request' });
-    const totalRevenue = await Booking.aggregate([
-      { $match: { 'payment.status': 'completed', status: 'confirmed' } },
-      { $group: { _id: null, total: { $sum: '$pricing.total' } } }
-    ]);
+    const totalUsers = await User.count();
+    const totalProperties = await Property.count();
+    const totalBookings = await Booking.count();
+    const pendingRequests = await Booking.count({ where: { status: 'pending_request' } });
+    
+    const totalRevenueResult = await Booking.findAll({
+      where: {
+        paymentStatus: 'completed',
+        status: 'confirmed'
+      },
+      attributes: [
+        [Sequelize.fn('SUM', Sequelize.col('pricing_total')), 'total']
+      ],
+      raw: true
+    });
+    const totalRevenue = parseFloat(totalRevenueResult[0]?.total || 0);
 
-    const recentBookings = await Booking.find()
-      .populate('property', 'title')
-      .populate('guest', 'name email')
-      .sort({ createdAt: -1 })
-      .limit(10);
+    const recentBookings = await Booking.findAll({
+      include: [
+        { model: Property, as: 'property', attributes: ['title'] },
+        { model: User, as: 'guest', attributes: ['name', 'email'] }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
 
     res.json({
       stats: {
@@ -59,19 +71,25 @@ router.get('/dashboard', async (req, res) => {
         totalProperties,
         totalBookings,
         pendingRequests,
-        totalRevenue: totalRevenue[0]?.total || 0
+        totalRevenue: totalRevenue || 0
       },
       recentBookings
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Dashboard error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 // Admin: contact messages list/update
 router.get('/messages', async (req, res) => {
   try {
-    const msgs = await ContactMessage.find().sort({ createdAt: -1 });
+    const msgs = await ContactMessage.findAll({
+      order: [['createdAt', 'DESC']]
+    });
     res.json(msgs);
   } catch (error) {
     console.error(error);
@@ -82,21 +100,40 @@ router.get('/messages', async (req, res) => {
 // Delete a booking (admin)
 router.delete('/bookings/:id', async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findByPk(req.params.id);
     if (!booking) {
       return res.status(404).json({ message: 'Rezervasyon bulunamadı' });
     }
 
     // Release property availability if necessary
-    const property = await Property.findById(booking.property);
+    const property = await Property.findByPk(booking.propertyId);
     if (property) {
+      const propertyData = property.toJSON();
+      const availability = (() => {
+        if (Array.isArray(propertyData.availability)) {
+          return propertyData.availability;
+        }
+        if (typeof propertyData.availability === 'string') {
+          try {
+            const parsed = JSON.parse(propertyData.availability);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (_) {
+            return [];
+          }
+        }
+        if (propertyData.availability && typeof propertyData.availability === 'object') {
+          // Sequelize JSON field bazen object dönebiliyor; değerleri arraye çevir
+          return Object.values(propertyData.availability);
+        }
+        return [];
+      })();
       const checkInDate = new Date(booking.checkIn);
       const checkOutDate = new Date(booking.checkOut);
       for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
         const dateStr = moment.utc(d).format('YYYY-MM-DD');
-        const slot = property.availability.find(a => 
+        const slot = availability.find(a => 
           moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
-          a.bookingId?.toString() === booking._id.toString()
+          a.bookingId?.toString() === booking.id.toString()
         );
         if (slot) {
           slot.isAvailable = true;
@@ -104,14 +141,29 @@ router.delete('/bookings/:id', async (req, res) => {
           slot.status = 'available';
         }
       }
-      await property.save();
+      await property.update({ availability: availability });
     }
 
-    await booking.deleteOne();
+    // Booking'e bağlı yorumlar varsa önce sil (FK kısıtını ihlal etmesin)
+    try {
+      await Review.destroy({ where: { bookingId: booking.id } });
+    } catch (reviewDeleteError) {
+      console.error('Booking silme - review temizleme hatası:', reviewDeleteError);
+      return res.status(500).json({ message: 'İlişkili yorumlar silinemedi' });
+    }
+
+    await booking.destroy();
     return res.json({ success: true });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('[Admin Booking Delete] Hata:', error);
+    try {
+      const logPath = path.join(__dirname, '..', '..', 'server-log.txt');
+      const logMessage = `\n[${new Date().toISOString()}] Admin booking delete error (id: ${req.params.id}): ${error.message}\n${error.stack || ''}\n`;
+      fs.appendFileSync(logPath, logMessage);
+    } catch (logError) {
+      console.error('Admin booking delete log yazılamadı:', logError);
+    }
+    res.status(500).json({ message: `Sunucu hatası: ${error.message}` });
   }
 });
 
@@ -121,45 +173,44 @@ router.get('/reviews', async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
     
     // Debug: Tüm yorumları say
-    const totalCount = await Review.countDocuments({});
+    const totalCount = await Review.count();
     console.log(`[Admin Reviews] Toplam yorum sayısı: ${totalCount}`);
     
     // Önce tüm yorumları al (populate olmadan)
-    const allReviews = await Review.find({})
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean(); // lean() ile daha hızlı çalışır
+    const allReviews = await Review.findAll({
+      order: [['createdAt', 'DESC']],
+      limit: limit,
+      raw: false
+    });
     
     console.log(`[Admin Reviews] Bulunan yorum sayısı: ${allReviews.length}`);
     
     // Her yorum için populate işlemini manuel yap
     const reviews = await Promise.all(allReviews.map(async (review) => {
       try {
-        const reviewObj = { ...review }; // Yeni obje oluştur
+        const reviewObj = review.toJSON ? review.toJSON() : { ...review.get() }; // Yeni obje oluştur
         
         // User populate
-        if (review.user) {
-          const userId = typeof review.user === 'string' ? review.user : review.user._id || review.user;
-          const user = await User.findById(userId).select('name email').lean();
-          reviewObj.user = user || { name: 'Silinmiş Kullanıcı', email: '' };
+        if (review.userId) {
+          const user = await User.findByPk(review.userId, { attributes: ['name', 'email'] });
+          reviewObj.user = user ? user.toJSON() : { name: 'Silinmiş Kullanıcı', email: '' };
         } else {
           reviewObj.user = { name: 'Bilinmeyen Kullanıcı', email: '' };
         }
         
         // Property populate
-        if (review.property) {
-          const propertyId = typeof review.property === 'string' ? review.property : review.property._id || review.property;
-          const property = await Property.findById(propertyId).select('title').lean();
-          reviewObj.property = property || { title: 'Silinmiş Daire' };
+        if (review.propertyId) {
+          const property = await Property.findByPk(review.propertyId, { attributes: ['title'] });
+          reviewObj.property = property ? property.toJSON() : { title: 'Silinmiş Daire' };
         } else {
           reviewObj.property = { title: 'Bilinmeyen Daire' };
         }
         
         return reviewObj;
       } catch (err) {
-        console.error(`[Admin Reviews] Yorum populate hatası (${review._id}):`, err);
+        console.error(`[Admin Reviews] Yorum populate hatası (${review.id || review._id}):`, err);
         // Hata durumunda fallback değerler
-        const reviewObj = { ...review };
+        const reviewObj = review.toJSON ? review.toJSON() : { ...review.get() };
         if (!reviewObj.user || typeof reviewObj.user === 'string') {
           reviewObj.user = { name: 'Bilinmeyen Kullanıcı', email: '' };
         }
@@ -194,9 +245,9 @@ router.get('/reviews', async (req, res) => {
 // Reviews - delete
 router.delete('/reviews/:id', async (req, res) => {
   try {
-    const review = await Review.findById(req.params.id);
+    const review = await Review.findByPk(req.params.id);
     if (!review) return res.status(404).json({ message: 'Yorum bulunamadı' });
-    await review.deleteOne();
+    await review.destroy();
     res.json({ success: true });
   } catch (error) {
     console.error(error);
@@ -247,16 +298,16 @@ router.post('/reviews/seed', async (req, res) => {
     }
 
     // 1. Tüm yorumları sil
-    const deletedCount = await Review.deleteMany({});
-    console.log(`[Seed Reviews] ${deletedCount.deletedCount} yorum silindi`);
+    const deletedCount = await Review.destroy({ where: {} });
+    console.log(`[Seed Reviews] ${deletedCount} yorum silindi`);
 
     // 2. Kullanıcı ve daireleri al
-    let users = await User.find({ role: 'user' }).limit(30);
-    let properties = await Property.find({ isActive: true }).limit(30);
+    let users = await User.findAll({ where: { role: 'user' }, limit: 30 });
+    let properties = await Property.findAll({ where: { isActive: true }, limit: 30 });
 
     // Eğer kullanıcı yoksa, admin kullanıcısını kullan
     if (users.length === 0) {
-      const adminUser = await User.findOne({ role: 'admin' });
+      const adminUser = await User.findOne({ where: { role: 'admin' } });
       if (adminUser) {
         users = [adminUser];
         console.log('[Seed Reviews] Admin kullanıcısı kullanılıyor');
@@ -283,7 +334,7 @@ router.post('/reviews/seed', async (req, res) => {
     console.log(`[Seed Reviews] ${users.length} kullanıcı ve ${properties.length} daire bulundu`);
 
     // 3. Rastgele yorumlar oluştur
-    const reviewCount = parseInt(req.body.count) || 30;
+    const reviewCount = parseInt(req.body.count, 10) || 30;
     const reviewsToCreate = [];
 
     console.log(`[Seed Reviews] ${reviewCount} yorum oluşturulacak`);
@@ -304,35 +355,77 @@ router.post('/reviews/seed', async (req, res) => {
       const tempEmail = `guest_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}@temp.com`;
       
       // Bu isimle kullanıcı var mı kontrol et
-      let user = await User.findOne({ name: randomName, email: { $regex: /^guest_.*@temp\.com$/ } });
+      let user = await User.findOne({ 
+        where: { 
+          name: randomName, 
+          email: { [Op.like]: 'guest_%@temp.com' }
+        } 
+      });
       
       // Eğer yoksa yeni kullanıcı oluştur
       if (!user) {
-        user = new User({
+        user = await User.create({
           name: randomName,
           email: tempEmail,
           password: 'temp123',
           role: 'user'
         });
-        await user.save();
         console.log(`[Seed Reviews] Yeni kullanıcı oluşturuldu: ${randomName}`);
       }
 
       const property = getRandomElement(properties);
       const rating = getRandomRating();
-      const fakeBookingId = new mongoose.Types.ObjectId();
+
+      // Guest bilgileri - kullanıcı datası eksikse doldur
+      const guestName = user.name || randomName;
+      const guestEmail = user.email || `seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
+      const guestPhone = user.phone || '0000000000';
+
+      // Rastgele konaklama tarihleri (geçmiş 90 gün içinde)
+      const stayLength = Math.floor(Math.random() * 4) + 1; // 1-4 gece
+      const checkIn = new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000);
+      const checkOut = new Date(checkIn);
+      checkOut.setDate(checkOut.getDate() + stayLength);
+
+      const dailyRate = parseFloat(property.pricingDaily) || 100;
+      const subtotal = dailyRate * stayLength;
+
+      const booking = await Booking.create({
+        propertyId: property.id,
+        guestId: user.id,
+        checkIn,
+        checkOut,
+        guestsAdults: 2,
+        guestsChildren: Math.random() > 0.7 ? 1 : 0,
+        pricingDailyRate: dailyRate,
+        pricingTotalDays: stayLength,
+        pricingSubtotal: subtotal,
+        pricingServiceFee: 0,
+        pricingTax: 0,
+        pricingTotal: subtotal,
+        paymentMethod: 'cash',
+        paymentStatus: 'completed',
+        status: 'completed',
+        requestType: 'manual',
+        guestInfo: {
+          name: guestName,
+          email: guestEmail,
+          phone: guestPhone
+        },
+        adminNotes: 'AUTO_GENERATED_REVIEW_SEED',
+        policiesAccepted: true,
+        policiesAcceptedAt: new Date()
+      });
 
       const review = {
-        property: property._id,
-        booking: fakeBookingId,
-        user: user._id,
-        rating: {
-          overall: rating,
-          cleanliness: getRandomSubRating(),
-          location: getRandomSubRating(),
-          value: getRandomSubRating(),
-          communication: getRandomSubRating()
-        },
+        propertyId: property.id,
+        bookingId: booking.id,
+        userId: user.id,
+        ratingOverall: rating,
+        ratingCleanliness: getRandomSubRating(),
+        ratingLocation: getRandomSubRating(),
+        ratingValue: getRandomSubRating(),
+        ratingCommunication: getRandomSubRating(),
         comment: getRandomElement(sampleComments),
         isVerified: Math.random() > 0.3, // %70 verified
         createdAt: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000)
@@ -341,15 +434,15 @@ router.post('/reviews/seed', async (req, res) => {
       reviewsToCreate.push(review);
     }
 
-    console.log(`[Seed Reviews] ${reviewsToCreate.length} yorum insertMany ile kaydedilecek`);
-    await Review.insertMany(reviewsToCreate);
-    const finalCount = await Review.countDocuments({});
+    console.log(`[Seed Reviews] ${reviewsToCreate.length} yorum bulkCreate ile kaydedilecek`);
+    await Review.bulkCreate(reviewsToCreate);
+    const finalCount = await Review.count();
     console.log(`[Seed Reviews] Toplam yorum sayısı: ${finalCount}`);
 
     res.json({
       success: true,
       message: `${reviewsToCreate.length} yorum oluşturuldu`,
-      deleted: deletedCount.deletedCount,
+      deleted: deletedCount,
       created: reviewsToCreate.length,
       total: finalCount
     });
@@ -364,10 +457,17 @@ router.get('/calendar', async (req, res) => {
   try {
     const now = new Date();
     const until = new Date(Date.now() + 60*24*60*60*1000);
-    const bookings = await Booking.find({
-      checkIn: { $lte: until },
-      checkOut: { $gte: now }
-    }).populate('property', 'title');
+    const bookings = await Booking.findAll({
+      where: {
+        checkIn: { [Op.lte]: until },
+        checkOut: { [Op.gte]: now }
+      },
+      include: [{
+        model: Property,
+        as: 'property',
+        attributes: ['id', 'title', 'locationCity', 'locationDistrict', 'locationNeighborhood']
+      }]
+    });
     res.json(bookings);
   } catch (e) {
     console.error(e);
@@ -384,14 +484,28 @@ router.get('/finance', async (req, res) => {
     // Compute current month total from bookings and upsert
     const monthStart = new Date(year, month-1, 1);
     const nextMonthStart = new Date(year, month, 1);
-    const agg = await Booking.aggregate([
-      { $match: { status: { $in: ['confirmed','completed'] }, checkIn: { $gte: monthStart, $lt: nextMonthStart } } },
-      { $group: { _id: null, revenue: { $sum: '$pricing.total' } } }
-    ]);
-    const total = agg[0]?.revenue || 0;
-    await MonthlyRevenue.findOneAndUpdate({ year, month }, { total, updatedAt: new Date() }, { upsert: true });
+    const agg = await Booking.findAll({
+      where: {
+        status: { [Op.in]: ['confirmed', 'completed'] },
+        checkIn: { [Op.gte]: monthStart, [Op.lt]: nextMonthStart }
+      },
+      attributes: [
+        [Sequelize.fn('SUM', Sequelize.col('pricing_total')), 'revenue']
+      ],
+      raw: true
+    });
+    const total = parseFloat(agg[0]?.revenue || 0);
+    
+    await MonthlyRevenue.upsert({ 
+      year, 
+      month, 
+      total, 
+      updatedAt: new Date() 
+    });
 
-    const list = await MonthlyRevenue.find().sort({ year: -1, month: -1 });
+    const list = await MonthlyRevenue.findAll({
+      order: [['year', 'DESC'], ['month', 'DESC']]
+    });
     res.json(list);
   } catch (e) {
     console.error(e);
@@ -402,7 +516,7 @@ router.get('/finance', async (req, res) => {
 // Delete a month record
 router.delete('/finance/:id', async (req, res) => {
   try {
-    await MonthlyRevenue.findByIdAndDelete(req.params.id);
+    await MonthlyRevenue.destroy({ where: { id: req.params.id } });
     res.json({ message: 'Kayıt silindi' });
   } catch (e) {
     console.error(e);
@@ -415,11 +529,10 @@ router.patch('/messages/:id/status', async (req, res) => {
     if (!['new', 'read', 'archived'].includes(status)) {
       return res.status(400).json({ message: 'Geçersiz durum' });
     }
-    const msg = await ContactMessage.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
+    const msg = await ContactMessage.findByPk(req.params.id);
+    if (msg) {
+      await msg.update({ status });
+    }
     if (!msg) return res.status(404).json({ message: 'Mesaj bulunamadı' });
     res.json(msg);
   } catch (error) {
@@ -431,7 +544,10 @@ router.patch('/messages/:id/status', async (req, res) => {
 // Delete contact message
 router.delete('/messages/:id', async (req, res) => {
   try {
-    const del = await ContactMessage.findByIdAndDelete(req.params.id);
+    const del = await ContactMessage.findByPk(req.params.id);
+    if (del) {
+      await del.destroy();
+    }
     if (!del) return res.status(404).json({ message: 'Mesaj bulunamadı' });
     res.json({ message: 'Mesaj silindi' });
   } catch (error) {
@@ -560,7 +676,10 @@ router.get('/performance', async (req, res) => {
 // Get all users
 router.get('/users', async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.findAll({
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
     res.json(users);
   } catch (error) {
     console.error(error);
@@ -577,11 +696,14 @@ router.get('/bookings', async (req, res) => {
       filter.status = status;
     }
     
-    const bookings = await Booking.find(filter)
-      .populate('property', 'title location images listingType')
-      .populate('guest', 'name email phone')
-      .populate('communicationLog.admin', 'name')
-      .sort({ createdAt: -1 });
+    const bookings = await Booking.findAll({
+      where: filter,
+      include: [
+        { model: Property, as: 'property', attributes: ['title', 'locationCity', 'locationDistrict', 'images', 'listingType'] },
+        { model: User, as: 'guest', attributes: ['name', 'email', 'phone'] }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
     
     res.json(bookings);
   } catch (error) {
@@ -593,10 +715,14 @@ router.get('/bookings', async (req, res) => {
 // Get pending requests
 router.get('/bookings/pending', async (req, res) => {
   try {
-    const bookings = await Booking.find({ status: 'pending_request' })
-      .populate('property', 'title location images pricing listingType')
-      .populate('guest', 'name email phone')
-      .sort({ createdAt: -1 });
+    const bookings = await Booking.findAll({
+      where: { status: 'pending_request' },
+      include: [
+        { model: Property, as: 'property', attributes: ['title', 'locationCity', 'locationDistrict', 'images', 'pricingDaily', 'pricingWeekly', 'pricingMonthly', 'listingType'] },
+        { model: User, as: 'guest', attributes: ['name', 'email', 'phone'] }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
     
     res.json(bookings);
   } catch (error) {
@@ -609,9 +735,12 @@ router.get('/bookings/pending', async (req, res) => {
 router.post('/bookings/:id/approve', async (req, res) => {
   try {
     const { paymentInfo } = req.body;
-    const booking = await Booking.findById(req.params.id)
-      .populate('property')
-      .populate('guest', 'name email');
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [
+        { model: Property, as: 'property' },
+        { model: User, as: 'guest', attributes: ['name', 'email'] }
+      ]
+    });
     
     if (!booking) {
       return res.status(404).json({ message: 'Rezervasyon bulunamadı' });
@@ -622,59 +751,89 @@ router.post('/bookings/:id/approve', async (req, res) => {
     }
 
     // Status'u confirmed yap
-    booking.status = 'confirmed';
+    const updateData = { status: 'confirmed' };
     if (req.body.adminNotes) {
-      booking.adminNotes = req.body.adminNotes;
+      updateData.adminNotes = req.body.adminNotes;
     }
-    await booking.save();
+    await booking.update(updateData);
+    
+    // Booking'i yeniden yükle (güncellenmiş veriler için)
+    await booking.reload();
 
     // Property müsaitliğini güncelle
-    const property = await Property.findById(booking.property);
-    if (property) {
-      const checkInDate = new Date(booking.checkIn);
-      const checkOutDate = new Date(booking.checkOut);
-      const desiredStatus = booking.payment?.status === 'completed' ? 'confirmed' : 'pending_request';
-      
-      for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dayMoment = moment.utc(d);
-        const dateStr = dayMoment.format('YYYY-MM-DD');
-        const slot = property.availability?.find(a => 
-          moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
-          a.bookingId?.toString() === booking._id.toString()
-        );
+    try {
+      const property = await Property.findByPk(booking.propertyId);
+      if (property) {
+        const propertyData = property.toJSON ? property.toJSON() : property;
+        const availability = Array.isArray(propertyData.availability) ? [...propertyData.availability] : [];
+        const checkInDate = new Date(booking.checkIn);
+        const checkOutDate = new Date(booking.checkOut);
         
-        if (slot) {
-          slot.status = desiredStatus;
-          slot.isAvailable = false;
-        } else {
-          property.availability = property.availability || [];
-          property.availability.push({
-            date: dayMoment.toDate(),
-            isAvailable: false,
-            bookingId: booking._id,
-            status: desiredStatus
+        // Onaylama işleminde her zaman 'confirmed' olmalı
+        const desiredStatus = 'confirmed';
+        
+        for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
+          const dayMoment = moment.utc(d);
+          const dateStr = dayMoment.format('YYYY-MM-DD');
+          const slot = availability.find(a => {
+            if (!a || !a.date) return false;
+            const slotDateStr = moment.utc(a.date).format('YYYY-MM-DD');
+            return slotDateStr === dateStr && 
+                   a.bookingId?.toString() === booking.id.toString();
           });
+          
+          if (slot) {
+            slot.status = desiredStatus;
+            slot.isAvailable = false;
+            slot.bookingId = booking.id;
+          } else {
+            availability.push({
+              date: dayMoment.toDate(),
+              isAvailable: false,
+              bookingId: booking.id,
+              status: desiredStatus
+            });
+          }
         }
+        await property.update({ availability: availability });
       }
-      await property.save();
+    } catch (availabilityError) {
+      console.error('Property availability güncelleme hatası:', availabilityError);
+      // Availability hatası işlemi durdurmamalı, sadece logla
     }
 
     // E-posta gönder
     try {
-      await emailService.sendRequestApprovedEmail(
-        booking.guestInfo.email,
-        booking.guestInfo.name,
-        booking,
-        paymentInfo
-      );
+      // Sequelize'de JSON alanlarına doğrudan erişim
+      const guestInfoRaw = booking.get('guestInfo');
+      const guestInfo = typeof guestInfoRaw === 'string' 
+        ? JSON.parse(guestInfoRaw) 
+        : guestInfoRaw;
+      
+      if (guestInfo && guestInfo.email && guestInfo.name) {
+        const bookingData = booking.toJSON ? booking.toJSON() : booking;
+        await emailService.sendRequestApprovedEmail(
+          guestInfo.email,
+          guestInfo.name,
+          bookingData,
+          paymentInfo
+        );
+      }
     } catch (emailError) {
       console.error('E-posta gönderme hatası:', emailError);
+      // E-posta hatası işlemi durdurmamalı
     }
 
-    res.json(booking);
+    const bookingResponse = booking.toJSON ? booking.toJSON() : booking;
+    res.json(bookingResponse);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Onaylama hatası:', error);
+    console.error('Hata detayı:', error.message);
+    console.error('Hata stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -682,57 +841,87 @@ router.post('/bookings/:id/approve', async (req, res) => {
 router.post('/bookings/:id/reject', async (req, res) => {
   try {
     const { reason } = req.body;
-    const booking = await Booking.findById(req.params.id)
-      .populate('guest', 'name email');
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [{ model: User, as: 'guest', attributes: ['name', 'email'] }]
+    });
     
     if (!booking) {
       return res.status(404).json({ message: 'Rezervasyon bulunamadı' });
     }
 
-    booking.status = 'cancelled';
+    const updateData = { status: 'cancelled' };
     if (req.body.adminNotes) {
-      booking.adminNotes = req.body.adminNotes;
+      updateData.adminNotes = req.body.adminNotes;
     }
-    await booking.save();
+    await booking.update(updateData);
+    
+    // Booking'i yeniden yükle (güncellenmiş veriler için)
+    await booking.reload();
 
     // Property müsaitliğini geri aç
-    const property = await Property.findById(booking.property);
-    if (property) {
-      const checkInDate = new Date(booking.checkIn);
-      const checkOutDate = new Date(booking.checkOut);
-      
-      for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = moment.utc(d).format('YYYY-MM-DD');
-        const slot = property.availability?.find(a => 
-          moment.utc(a.date).format('YYYY-MM-DD') === dateStr && 
-          a.bookingId?.toString() === booking._id.toString()
-        );
+    try {
+      const property = await Property.findByPk(booking.propertyId);
+      if (property) {
+        const propertyData = property.toJSON ? property.toJSON() : property;
+        const availability = Array.isArray(propertyData.availability) ? [...propertyData.availability] : [];
+        const checkInDate = new Date(booking.checkIn);
+        const checkOutDate = new Date(booking.checkOut);
         
-        if (slot) {
-          slot.isAvailable = true;
-          slot.bookingId = null;
-          slot.status = 'available';
+        for (let d = new Date(checkInDate); d <= checkOutDate; d.setDate(d.getDate() + 1)) {
+          const dayMoment = moment.utc(d);
+          const dateStr = dayMoment.format('YYYY-MM-DD');
+          const slot = availability.find(a => {
+            if (!a || !a.date) return false;
+            const slotDateStr = moment.utc(a.date).format('YYYY-MM-DD');
+            return slotDateStr === dateStr && 
+                   a.bookingId?.toString() === booking.id.toString();
+          });
+          
+          if (slot) {
+            slot.isAvailable = true;
+            slot.bookingId = null;
+            slot.status = 'available';
+          }
         }
+        await property.update({ availability: availability });
       }
-      await property.save();
+    } catch (availabilityError) {
+      console.error('Property availability güncelleme hatası:', availabilityError);
+      // Availability hatası işlemi durdurmamalı, sadece logla
     }
 
     // E-posta gönder
     try {
-      await emailService.sendRequestCancelledEmail(
-        booking.guestInfo.email,
-        booking.guestInfo.name,
-        booking,
-        reason
-      );
+      // Sequelize'de JSON alanlarına doğrudan erişim
+      const guestInfoRaw = booking.get('guestInfo');
+      const guestInfo = typeof guestInfoRaw === 'string' 
+        ? JSON.parse(guestInfoRaw) 
+        : guestInfoRaw;
+      
+      if (guestInfo && guestInfo.email && guestInfo.name) {
+        const bookingData = booking.toJSON ? booking.toJSON() : booking;
+        await emailService.sendRequestCancelledEmail(
+          guestInfo.email,
+          guestInfo.name,
+          bookingData,
+          reason
+        );
+      }
     } catch (emailError) {
       console.error('E-posta gönderme hatası:', emailError);
+      // E-posta hatası işlemi durdurmamalı
     }
 
-    res.json(booking);
+    const bookingResponse = booking.toJSON ? booking.toJSON() : booking;
+    res.json(bookingResponse);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Sunucu hatası' });
+    console.error('Reddetme hatası:', error);
+    console.error('Hata detayı:', error.message);
+    console.error('Hata stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Sunucu hatası',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -754,7 +943,7 @@ router.post('/bookings/manual', [
     const { property, checkIn, checkOut, guests, guestInfo, pricing, payment } = req.body;
 
     // Property kontrolü
-    const propertyDoc = await Property.findById(property);
+    const propertyDoc = await Property.findByPk(property);
     if (!propertyDoc) {
       return res.status(404).json({ message: 'Daire bulunamadı' });
     }
@@ -787,7 +976,9 @@ router.post('/bookings/manual', [
 
     // Fiyat hesaplama
     const totalDays = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
-    let dailyRate = pricing?.dailyRate || propertyDoc.pricing.daily;
+    const propertyData = propertyDoc.toJSON ? propertyDoc.toJSON() : propertyDoc;
+    const propertyPricing = propertyData.pricing || {};
+    let dailyRate = pricing?.dailyRate || propertyPricing.daily || propertyData.pricingDaily || 0;
     
     const subtotal = pricing?.subtotal || (dailyRate * totalDays);
     const serviceFee = pricing?.serviceFee || (subtotal * 0.10);
@@ -797,13 +988,13 @@ router.post('/bookings/manual', [
     // Guest kullanıcı varsa bul, yoksa null (misafir rezervasyon)
     let guestUser = null;
     if (guestInfo.email) {
-      guestUser = await User.findOne({ email: guestInfo.email });
+      guestUser = await User.findOne({ where: { email: guestInfo.email } });
     }
 
     // Booking oluştur
-    const booking = new Booking({
-      property,
-      guest: guestUser ? guestUser._id : null,
+    const booking = await Booking.create({
+      propertyId: property,
+      guestId: guestUser ? guestUser.id : null,
       checkIn: checkInDate,
       checkOut: checkOutDate,
       guests: guests || { adults: 1, children: 0 },
@@ -816,16 +1007,20 @@ router.post('/bookings/manual', [
         tax,
         total
       },
-      payment: {
-        method: payment?.method || 'cash',
-        status: payment?.status || 'completed'
-      },
+      paymentMethod: payment?.method || 'cash',
+      paymentStatus: payment?.status || 'completed',
       status: 'confirmed', // Manuel rezervasyon direkt confirmed
       requestType: 'manual',
-      adminNotes: req.body.adminNotes
+      adminNotes: req.body.adminNotes,
+      guestsAdults: guests?.adults || 1,
+      guestsChildren: guests?.children || 0,
+      pricingDailyRate: dailyRate,
+      pricingTotalDays: totalDays,
+      pricingSubtotal: subtotal,
+      pricingServiceFee: serviceFee,
+      pricingTax: tax,
+      pricingTotal: total
     });
-
-    await booking.save();
 
     // Müsaitliği "confirmed" olarak işaretle
     for (const date of bookingDates) {
@@ -847,10 +1042,11 @@ router.post('/bookings/manual', [
       }
     }
 
-    propertyDoc.availability = availability;
-    await propertyDoc.save();
+    await propertyDoc.update({ availability: availability });
 
-    await booking.populate('property', 'title location images');
+    await booking.reload({
+      include: [{ model: Property, as: 'property', attributes: ['title', 'locationCity', 'locationDistrict', 'images'] }]
+    });
 
     res.status(201).json(booking);
   } catch (error) {
@@ -869,11 +1065,10 @@ router.patch('/bookings/:id/notes', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const booking = await Booking.findByIdAndUpdate(
-      req.params.id,
-      { adminNotes: req.body.adminNotes },
-      { new: true }
-    );
+    const booking = await Booking.findByPk(req.params.id);
+    if (booking) {
+      await booking.update({ adminNotes: req.body.adminNotes });
+    }
 
     if (!booking) {
       return res.status(404).json({ message: 'Rezervasyon bulunamadı' });
@@ -921,9 +1116,10 @@ router.patch('/bookings/:id/payment', [
 // Get all properties
 router.get('/properties', async (req, res) => {
   try {
-    const properties = await Property.find()
-      .populate('owner', 'name email')
-      .sort({ createdAt: -1 });
+    const properties = await Property.findAll({
+      include: [{ model: User, as: 'owner', attributes: ['name', 'email'] }],
+      order: [['createdAt', 'DESC']]
+    });
     
     res.json(properties);
   } catch (error) {
@@ -936,7 +1132,13 @@ router.get('/properties', async (req, res) => {
 router.post('/properties/seed', async (req, res) => {
   try {
     const count = Math.min(parseInt(req.body?.count, 10) || 10, 30);
-    const ownerId = req.user?._id || new mongoose.Types.ObjectId();
+    // Eğer kullanıcı giriş yapmışsa onun ID'sini kullan, yoksa varsayılan admin ID'sini kullan
+    let ownerId = req.user?.id;
+    if (!ownerId) {
+      // Varsayılan admin kullanıcısını bul veya oluştur
+      const defaultAdmin = await User.findOne({ where: { email: 'admin' } });
+      ownerId = defaultAdmin ? defaultAdmin.id : 1;
+    }
     const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
     const districts = ['Konyaaltı','Muratpaşa','Kepez','Lara','Döşemealtı'];
     const types = ['1+0','1+1','2+1','3+1','4+1'];
@@ -976,12 +1178,12 @@ router.post('/properties/seed', async (req, res) => {
         amenities: ['WiFi','Klima','TV'].slice(0, 1 + Math.floor(Math.random()*3)),
         images: [mkImg(rnd(sampleImages)), mkImg(rnd(sampleImages))],
         pricing: { daily, weekly, monthly },
-        owner: ownerId,
+        ownerId: ownerId,
         isActive: true
       };
     });
 
-    const inserted = await Property.insertMany(docs);
+    const inserted = await Property.bulkCreate(docs);
     res.json({ message: `${inserted.length} daire oluşturuldu`, created: inserted.length });
   } catch (error) {
     console.error(error);
@@ -997,11 +1199,10 @@ router.patch('/users/:id/role', async (req, res) => {
       return res.status(400).json({ message: 'Geçersiz rol' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { role },
-      { new: true }
-    ).select('-password');
+    const user = await User.findByPk(req.params.id);
+    if (user) {
+      await user.update({ role });
+    }
 
     if (!user) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
@@ -1033,7 +1234,9 @@ router.patch('/me/credentials', [
     }
 
     // Load full user with password for verification
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user.id, {
+      attributes: ['id', 'email', 'password', 'role', 'superAdmin']
+    });
     if (!user) return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
 
     const isMatch = await user.comparePassword(currentPassword);
@@ -1043,7 +1246,7 @@ router.patch('/me/credentials', [
 
     // If email (username) is changing, ensure uniqueness
     if (email && email !== user.email) {
-      const exists = await User.findOne({ email });
+      const exists = await User.findOne({ where: { email } });
       if (exists) {
         return res.status(400).json({ message: 'Bu kullanıcı adı/e-posta zaten kullanımda' });
       }
@@ -1064,8 +1267,10 @@ router.patch('/me/credentials', [
 
 router.get('/admin-users', superAdmin, async (req, res) => {
   try {
-    const admins = await User.find({ role: 'admin' })
-      .select('name email role superAdmin createdAt updatedAt');
+    const admins = await User.findAll({
+      where: { role: 'admin' },
+      attributes: ['id', 'name', 'email', 'role', 'superAdmin', 'createdAt', 'updatedAt']
+    });
     res.json(admins);
   } catch (error) {
     console.error(error);
@@ -1089,13 +1294,13 @@ router.patch('/admin-users/:id', superAdmin, [
       return res.status(400).json({ message: 'Güncellenecek bir alan seçmediniz' });
     }
 
-    const adminUser = await User.findById(req.params.id);
+    const adminUser = await User.findByPk(req.params.id);
     if (!adminUser) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
     }
 
     // Başka bir ana yöneticiyi güncelleme izni verme
-    if (adminUser.superAdmin && adminUser._id.toString() !== req.user._id.toString()) {
+    if (adminUser.superAdmin && adminUser.id !== req.user.id) {
       return res.status(403).json({ message: 'Ana yönetici sadece kendi bilgilerini güncelleyebilir' });
     }
 
@@ -1104,11 +1309,12 @@ router.patch('/admin-users/:id', superAdmin, [
     }
 
     if (typeof email === 'string' && email.trim() && email.trim() !== adminUser.email) {
-      const existing = await User.findOne({ email: email.trim().toLowerCase() });
-      if (existing && existing._id.toString() !== adminUser._id.toString()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const existing = await User.findOne({ where: { email: normalizedEmail } });
+      if (existing && existing.id !== adminUser.id) {
         return res.status(400).json({ message: 'Bu kullanıcı adı/e-posta zaten kullanımda' });
       }
-      adminUser.email = email.trim();
+      adminUser.email = normalizedEmail;
     }
 
     if (typeof password === 'string' && password) {
@@ -1120,7 +1326,7 @@ router.patch('/admin-users/:id', superAdmin, [
     res.json({
       message: 'Kullanıcı bilgileri güncellendi',
       user: {
-        id: adminUser._id,
+        id: adminUser.id,
         name: adminUser.name,
         email: adminUser.email,
         role: adminUser.role,
